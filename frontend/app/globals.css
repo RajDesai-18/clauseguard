@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Display font */
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  /* Risk colors */
+  --color-risk-green: oklch(0.72 0.17 142);
+  --color-risk-yellow: oklch(0.8 0.16 84);
+  --color-risk-red: oklch(0.65 0.2 25);
+
+  --color-background: oklch(0.13 0.01 260);
+  --color-foreground: oklch(0.93 0.01 260);
+  --color-card: oklch(0.16 0.01 260);
+  --color-card-foreground: oklch(0.93 0.01 260);
+  --color-popover: oklch(0.16 0.01 260);
+  --color-popover-foreground: oklch(0.93 0.01 260);
+  --color-primary: oklch(0.7 0.15 180);
+  --color-primary-foreground: oklch(0.13 0.01 260);
+  --color-secondary: oklch(0.22 0.01 260);
+  --color-secondary-foreground: oklch(0.93 0.01 260);
+  --color-muted: oklch(0.22 0.01 260);
+  --color-muted-foreground: oklch(0.6 0.01 260);
+  --color-accent: oklch(0.22 0.01 260);
+  --color-accent-foreground: oklch(0.93 0.01 260);
+  --color-destructive: oklch(0.65 0.2 25);
+  --color-destructive-foreground: oklch(0.93 0.01 260);
+  --color-border: oklch(0.25 0.01 260);
+  --color-input: oklch(0.25 0.01 260);
+  --color-ring: oklch(0.7 0.15 180);
+  --color-chart-1: oklch(0.7 0.15 180);
+  --color-chart-2: oklch(0.72 0.17 142);
+  --color-chart-3: oklch(0.8 0.16 84);
+  --color-chart-4: oklch(0.65 0.2 25);
+  --color-chart-5: oklch(0.7 0.12 300);
+  --color-sidebar-background: oklch(0.15 0.01 260);
+  --color-sidebar-foreground: oklch(0.93 0.01 260);
+  --color-sidebar-primary: oklch(0.7 0.15 180);
+  --color-sidebar-primary-foreground: oklch(0.13 0.01 260);
+  --color-sidebar-accent: oklch(0.22 0.01 260);
+  --color-sidebar-accent-foreground: oklch(0.93 0.01 260);
+  --color-sidebar-border: oklch(0.25 0.01 260);
+  --color-sidebar-ring: oklch(0.7 0.15 180);
+  --radius: 0.625rem;
+}
