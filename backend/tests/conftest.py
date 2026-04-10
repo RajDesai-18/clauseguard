@@ -19,4 +19,5 @@ async def client():
         yield ac
     # Allow event loop to clean up connections
     import asyncio
+
     await asyncio.sleep(0.1)
