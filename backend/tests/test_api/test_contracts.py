@@ -42,15 +42,7 @@ async def test_list_contracts_returns_200(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_get_contract_not_found(client: AsyncClient) -> None:
-    """Getting a non-existent contract should return 404.
-
-    Note: Skipped on Windows due to asyncpg event loop cleanup bug.
-    Works correctly in Docker/Linux and via manual curl testing.
-    """
-    import sys
-
-    if sys.platform == "win32":
-        pytest.skip("asyncpg cleanup issue on Windows ProactorEventLoop")
+    """Getting a non-existent contract should return 404."""
     fake_id = "00000000-0000-0000-0000-000000000000"
     response = await client.get(f"/api/v1/contracts/{fake_id}")
     assert response.status_code == 404
