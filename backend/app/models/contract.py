@@ -20,8 +20,8 @@ class Contract(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "contracts"
 
-    user_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
     file_name: Mapped[str] = mapped_column(String(500), nullable=False)
     file_url: Mapped[str] = mapped_column(String(1000), nullable=False)
@@ -34,7 +34,7 @@ class Contract(Base, UUIDMixin, TimestampMixin):
     clause_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    user: Mapped[User] = relationship(back_populates="contracts")
+    user: Mapped[User | None] = relationship(back_populates="contracts")
     clauses: Mapped[list[Clause]] = relationship(
         back_populates="contract", cascade="all, delete-orphan"
     )
