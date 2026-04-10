@@ -2,17 +2,30 @@
 
 import uuid
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
-class RequestIDMiddleware(BaseHTTPMiddleware):
+class RequestIDMiddleware:
     """Attach a unique request ID to every request/response."""
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-        request.state.request_id = request_id
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
+        scope["state"]["request_id"] = request_id
+
+        async def send_with_request_id(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"x-request-id", request_id.encode()))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_request_id)  # type: ignore
