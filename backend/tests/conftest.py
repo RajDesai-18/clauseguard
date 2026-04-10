@@ -17,3 +17,6 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    # Allow event loop to clean up connections
+    import asyncio
+    await asyncio.sleep(0.1)
