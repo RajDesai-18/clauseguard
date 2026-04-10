@@ -48,6 +48,13 @@ jobs:
       run:
         working-directory: backend
 
+    env:
+      DATABASE_URL: postgresql+asyncpg://clauseguard:secret@localhost:5432/clauseguard
+      RABBITMQ_URL: amqp://clauseguard:secret@localhost:5672/
+      REDIS_URL: redis://localhost:6379/0
+      MINIO_ENDPOINT: localhost:9000
+      APP_ENV: test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -65,13 +72,10 @@ jobs:
       - name: Format check
         run: ruff format --check .
 
+      - name: Run migrations
+        run: alembic upgrade head
+
       - name: Run tests
-        env:
-          DATABASE_URL: postgresql+asyncpg://clauseguard:secret@localhost:5432/clauseguard
-          RABBITMQ_URL: amqp://clauseguard:secret@localhost:5672/
-          REDIS_URL: redis://localhost:6379/0
-          MINIO_ENDPOINT: localhost:9000
-          APP_ENV: test
         run: pytest -v
 
   frontend:
