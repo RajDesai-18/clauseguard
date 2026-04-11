@@ -1,6 +1,5 @@
 """Shared test fixtures."""
 
-import asyncio
 import logging
 
 import pytest
