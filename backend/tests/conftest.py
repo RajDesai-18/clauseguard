@@ -14,16 +14,24 @@ logger = logging.getLogger(__name__)
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing FastAPI endpoints."""
-    from app.core.database import dispose_engine
-    from app.core.redis import close_redis
-
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
     # Reset singletons so the next test gets a fresh engine on its own loop
-    await dispose_engine()
-    await close_redis()
+    try:
+        from app.core.database import dispose_engine
+
+        await dispose_engine()
+    except RuntimeError:
+        pass
+
+    try:
+        from app.core.redis import close_redis
+
+        await close_redis()
+    except RuntimeError:
+        pass
 
 
 def pytest_configure(config):
