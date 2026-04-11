@@ -29,7 +29,7 @@ async def publish_progress(
         current_step: Current step number (1-5).
         total_steps: Total pipeline steps.
     """
-    redis = get_redis()
+    redis = await get_redis()
     channel = f"{CHANNEL_PREFIX}{contract_id}"
     payload = json.dumps(
         {
@@ -41,7 +41,7 @@ async def publish_progress(
         }
     )
     try:
-        await redis.publish(channel, payload)  # type: ignore
+        await redis.publish(channel, payload)
         logger.info("Published progress: contract=%s status=%s", contract_id, status)
     except Exception:
         logger.exception("Failed to publish progress for contract %s", contract_id)

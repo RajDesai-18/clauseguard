@@ -2,15 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 from httpx import AsyncClient
-
-needs_db = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="DB tests skip on Windows, run in CI (Linux)",
-)
 
 
 @pytest.mark.asyncio
@@ -35,7 +28,7 @@ async def test_upload_rejects_empty_file(client: AsyncClient) -> None:
     assert "empty" in response.json()["detail"].lower()
 
 
-@needs_db
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_list_contracts_returns_200(client: AsyncClient) -> None:
     """Listing contracts should return 200 with pagination structure."""
@@ -48,7 +41,7 @@ async def test_list_contracts_returns_200(client: AsyncClient) -> None:
     assert "size" in data
 
 
-@needs_db
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_get_contract_not_found(client: AsyncClient) -> None:
     """Getting a non-existent contract should return 404."""
