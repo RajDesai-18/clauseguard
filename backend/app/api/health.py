@@ -24,10 +24,10 @@ async def health_check() -> dict:
     try:
         from sqlalchemy import text
 
-        from app.core.database import async_session_factory
+        from app.core.database import get_session_factory
 
         async with asyncio.timeout(HEALTH_CHECK_TIMEOUT):
-            async with async_session_factory() as session:
+            async with get_session_factory()() as session:
                 await session.execute(text("SELECT 1"))
         results["services"]["postgres"] = "healthy"
     except Exception as e:

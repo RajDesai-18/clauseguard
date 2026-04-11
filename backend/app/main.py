@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.database import dispose_engine
 from app.core.redis import close_redis
 from app.middleware.request_id import RequestIDMiddleware
 
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await dispose_engine()
     await close_redis()
     logger.info("ClauseGuard API shut down")
 
