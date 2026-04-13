@@ -35,10 +35,11 @@ class Settings(BaseSettings):
     minio_use_ssl: bool = False
 
     # LLM
+    gemini_api_key: str = "gemini-placeholder"
     openai_api_key: str = "sk-placeholder"
     anthropic_api_key: str = "sk-ant-placeholder"
-    llm_primary_model: str = "gpt-4.1"
-    llm_fallback_model: str = "claude-sonnet-4-20250514"
+    llm_primary_model: str = "gemini/gemini-2.5-flash"
+    llm_fallback_model: str = "gpt-4.1"
 
     @property
     def cors_origin_list(self) -> list[str]:

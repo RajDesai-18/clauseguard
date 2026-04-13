@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.storage import upload_file
+from app.models.clause import Clause
 from app.models.contract import Contract
+from app.schemas.clause import ClauseListResponse, ClauseResponse
 from app.schemas.contract import (
     ContractDetail,
     ContractListResponse,
@@ -169,3 +171,33 @@ async def get_contract(
             detail="Contract not found.",
         )
     return ContractDetail.model_validate(contract)
+
+
+@router.get("/{contract_id}/clauses", response_model=ClauseListResponse)
+async def get_contract_clauses(
+    contract_id: uuid.UUID,
+    db: DBSession,
+) -> ClauseListResponse:
+    """Get all analyzed clauses for a contract."""
+    # Verify contract exists
+    contract_result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    contract = contract_result.scalar_one_or_none()
+    if contract is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found.",
+        )
+
+    # Fetch clauses ordered by position
+    clauses_result = await db.execute(
+        select(Clause).where(Clause.contract_id == contract_id).order_by(Clause.position)
+    )
+    clauses = clauses_result.scalars().all()
+
+    return ClauseListResponse(
+        contract_id=str(contract.id),
+        contract_type=contract.contract_type,
+        overall_risk=contract.overall_risk,
+        clause_count=len(clauses),
+        clauses=[ClauseResponse.model_validate(c) for c in clauses],
+    )
