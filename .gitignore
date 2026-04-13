@@ -40,4 +40,6 @@ htmlcov/
 minio_data/
 
 # PostgreSQL data
-pgdata/
+pgdata/test-nda.pdf 
+
+test-nda.pdf

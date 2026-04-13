@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pgvector.sqlalchemy import Vector  # type: ignore
 from sqlalchemy import Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,6 +27,7 @@ class Clause(Base, UUIDMixin, TimestampMixin):
     suggested_redline: Mapped[str | None] = mapped_column(Text)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    embedding = mapped_column(Vector(1536), nullable=True)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON)
 
     contract: Mapped[Contract] = relationship(back_populates="clauses")
