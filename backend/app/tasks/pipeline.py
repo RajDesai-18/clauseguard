@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from datetime import UTC, datetime
 
@@ -19,8 +18,10 @@ from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.clause_analyzer import analyze_clause
 from app.services.clause_splitter import split_clauses
 from app.services.document_parser import parse_document
+from app.services.embedding import generate_embeddings_batch
 from app.services.progress import publish_progress_sync
 from app.services.redline_generator import generate_redline
+from app.services.semantic_cache import find_similar_clause
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +63,11 @@ def run_pipeline(self, contract_id: str) -> dict:
         2. Split into clauses and classify (LLM)
         3. Analyze each clause for risk (LLM)
         4. Generate redlines for risky clauses (LLM)
-        5. Finalize and persist results
+        5. Generate embeddings and persist results
     """
     logger.info("Pipeline started for contract %s", contract_id)
     publish_progress_sync(
-        contract_id,  # type: ignore
+        contract_id,
         status="parsing",
         detail="Extracting text from document",
         current_step=1,
@@ -78,7 +79,7 @@ def run_pipeline(self, contract_id: str) -> dict:
         if contract is None:
             raise ValueError(f"Contract {contract_id} not found")
 
-        # ── Step 1: Parse document ──────────────────────────────
+        # -- Step 1: Parse document ------------------------------
         contract.status = "parsing"
         session.commit()
 
@@ -89,19 +90,19 @@ def run_pipeline(self, contract_id: str) -> dict:
         session.commit()
 
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="parsed",
             detail=f"Extracted {len(raw_text)} characters",
             current_step=1,
         )
         logger.info("Parsed contract %s: %d chars", contract_id, len(raw_text))
 
-        # ── Step 2: Split into clauses ──────────────────────────
+        # -- Step 2: Split into clauses --------------------------
         contract.status = "analyzing"
         session.commit()
 
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="analyzing",
             detail="Splitting contract into clauses",
             current_step=2,
@@ -123,9 +124,9 @@ def run_pipeline(self, contract_id: str) -> dict:
             len(raw_clauses),
         )
 
-        # ── Step 3: Analyze each clause ─────────────────────────
+        # -- Step 3: Analyze each clause -------------------------
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="scoring",
             detail=f"Analyzing {len(raw_clauses)} clauses",
             current_step=3,
@@ -135,39 +136,45 @@ def run_pipeline(self, contract_id: str) -> dict:
 
         analyzed_clauses = []
         for i, raw_clause in enumerate(raw_clauses, 1):
-            if i > 1:
-                time.sleep(6)
             clause_text = raw_clause.get("original_text", "")
             clause_type = raw_clause.get("clause_type", "unknown")
             position = raw_clause.get("position", i)
 
             publish_progress_sync(
-                contract_id,  # type: ignore
+                contract_id,
                 status="scoring",
                 detail=f"Analyzing clause {i}/{len(raw_clauses)}: {clause_type}",
                 current_step=3,
             )
 
-            # Check cache first to avoid redundant LLM calls
+            # Layer 1: Check Redis hash cache (exact match)
             analysis = get_cached_analysis(clause_text, contract_type)
             if analysis is not None:
-                logger.info("Cache hit for clause %d (%s)", i, clause_type)
+                logger.info("Redis cache hit for clause %d (%s)", i, clause_type)
             else:
-                try:
-                    analysis = analyze_clause(clause_text, clause_type, contract_type)
+                # Layer 2: Check pgvector semantic cache (similar match)
+                analysis = find_similar_clause(clause_text)
+                if analysis is not None:
+                    logger.info("Semantic cache hit for clause %d (%s)", i, clause_type)
+                    # Store in Redis so next exact match is instant
                     set_cached_analysis(clause_text, contract_type, analysis)
-                except Exception:
-                    logger.exception(
-                        "Failed to analyze clause %d (%s), defaulting to yellow",
-                        i,
-                        clause_type,
-                    )
-                    analysis = {
-                        "risk_level": "yellow",
-                        "confidence": 0.0,
-                        "explanation": "Analysis failed. Manual review recommended.",
-                        "market_comparison": "Unable to compare due to analysis error.",
-                    }
+                else:
+                    # Layer 3: Call LLM
+                    try:
+                        analysis = analyze_clause(clause_text, clause_type, contract_type)
+                        set_cached_analysis(clause_text, contract_type, analysis)
+                    except Exception:
+                        logger.exception(
+                            "Failed to analyze clause %d (%s), defaulting to yellow",
+                            i,
+                            clause_type,
+                        )
+                        analysis = {
+                            "risk_level": "yellow",
+                            "confidence": 0.0,
+                            "explanation": "Analysis failed. Manual review recommended.",
+                            "market_comparison": "Unable to compare due to analysis error.",
+                        }
 
             analyzed_clauses.append(
                 {
@@ -178,9 +185,9 @@ def run_pipeline(self, contract_id: str) -> dict:
                 }
             )
 
-        # ── Step 4: Generate redlines for risky clauses ─────────
+        # -- Step 4: Generate redlines for risky clauses ---------
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="scoring",
             detail="Generating suggested revisions for risky clauses",
             current_step=4,
@@ -188,7 +195,6 @@ def run_pipeline(self, contract_id: str) -> dict:
 
         for clause_data in analyzed_clauses:
             if clause_data["risk_level"] in ("yellow", "red"):
-                time.sleep(6)
                 try:
                     redline = generate_redline(
                         clause_text=clause_data["original_text"],
@@ -207,15 +213,31 @@ def run_pipeline(self, contract_id: str) -> dict:
             else:
                 clause_data["suggested_redline"] = None
 
-        # ── Step 5: Persist clauses and finalize ────────────────
+        # -- Step 5: Generate embeddings, persist, finalize ------
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="complete",
-            detail="Saving results",
+            detail="Generating embeddings and saving results",
             current_step=5,
         )
 
-        for clause_data in analyzed_clauses:
+        # Batch-generate embeddings for all clause texts
+        clause_texts = [c["original_text"] for c in analyzed_clauses]
+        try:
+            embeddings = generate_embeddings_batch(clause_texts)
+            logger.info(
+                "Generated %d embeddings for contract %s",
+                len(embeddings),
+                contract_id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to generate embeddings for contract %s, continuing without",
+                contract_id,
+            )
+            embeddings = [None] * len(analyzed_clauses)
+
+        for clause_data, embedding in zip(analyzed_clauses, embeddings, strict=True):
             clause = Clause(
                 contract_id=contract.id,
                 clause_type=clause_data["clause_type"],
@@ -226,6 +248,7 @@ def run_pipeline(self, contract_id: str) -> dict:
                 suggested_redline=clause_data.get("suggested_redline"),
                 position=clause_data["position"],
                 confidence=clause_data.get("confidence", 0.0),
+                embedding=embedding,
             )
             session.add(clause)
 
@@ -236,7 +259,7 @@ def run_pipeline(self, contract_id: str) -> dict:
         session.commit()
 
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="complete",
             detail=(
                 f"Analysis complete: {len(analyzed_clauses)} clauses, "
@@ -270,7 +293,7 @@ def run_pipeline(self, contract_id: str) -> dict:
         except Exception:
             logger.exception("Failed to update status to failed")
         publish_progress_sync(
-            contract_id,  # type: ignore
+            contract_id,
             status="failed",
             detail="Pipeline failed",
             current_step=0,

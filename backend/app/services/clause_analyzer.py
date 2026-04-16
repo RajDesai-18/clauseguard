@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.services.llm_client import call_llm_json
+from app.services.template_matcher import find_nearest_template
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,18 @@ Rules:
 - market_comparison should reference what a typical {contract_type} clause looks like.
 - confidence reflects how certain you are in the risk assessment (0.8+ for clear cases)."""
 
+TEMPLATE_CONTEXT = """
+
+MARKET-STANDARD REFERENCE (similarity: {similarity:.0%}):
+The following is a market-standard {clause_type} clause for {contract_type} contracts.
+Use this as a grounded reference point for your market_comparison analysis.
+Do NOT copy this text into your response. Instead, compare the clause under review
+against this standard to identify specific deviations.
+
+---
+{standard_text}
+---"""
+
 
 def analyze_clause(
     clause_text: str,
@@ -38,6 +51,10 @@ def analyze_clause(
     contract_type: str,
 ) -> dict[str, Any]:
     """Analyze a single clause for risk level and explanation.
+
+    Searches for the nearest market-standard template via pgvector
+    and includes it as grounded context in the LLM prompt when a
+    relevant match is found.
 
     Args:
         clause_text: The exact text of the clause.
@@ -51,6 +68,21 @@ def analyze_clause(
         Exception: If LLM call fails or returns invalid JSON.
     """
     system_prompt = ANALYZE_CLAUSE_PROMPT.format(contract_type=contract_type)
+
+    # Search for nearest market-standard template
+    template = find_nearest_template(clause_text, contract_type)
+    if template is not None and template["similarity"] >= 0.5:
+        system_prompt += TEMPLATE_CONTEXT.format(
+            similarity=template["similarity"],
+            clause_type=template["clause_type"],
+            contract_type=contract_type,
+            standard_text=template["standard_text"],
+        )
+        logger.info(
+            "Enriched analysis prompt with template: %s (similarity: %.4f)",
+            template["clause_type"],
+            template["similarity"],
+        )
 
     messages = [
         {"role": "system", "content": system_prompt},

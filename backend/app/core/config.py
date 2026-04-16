@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """ClauseGuard application settings loaded from environment."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = "gemini-placeholder"
     openai_api_key: str = "sk-placeholder"
     anthropic_api_key: str = "sk-ant-placeholder"
-    llm_primary_model: str = "gemini/gemini-2.5-flash"
-    llm_fallback_model: str = "gpt-4.1"
+    llm_primary_model: str = "gpt-5.1"
+    llm_fallback_model: str = "gemini/gemini-2.5-flash"
 
     @property
     def cors_origin_list(self) -> list[str]:
