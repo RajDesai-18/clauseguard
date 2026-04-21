@@ -21,8 +21,7 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     title: "ClauseGuard — AI Contract Review",
-    description:
-      "Instant, plain-English contract analysis with AI-suggested redlines.",
+    description: "Instant, plain-English contract analysis with AI-suggested redlines.",
     type: "website",
   },
   robots: {
@@ -47,7 +46,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="relative min-h-screen bg-background text-foreground antialiased">
+      <body className="bg-background text-foreground relative min-h-screen antialiased">
         <div className="pointer-events-none fixed inset-0 z-0">
           <BondPaper />
         </div>

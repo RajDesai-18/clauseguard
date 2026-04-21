@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -21,12 +24,20 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@next/eslint-plugin-next": "^16.2.4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20.19.39",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.59.0"
   }
 }
