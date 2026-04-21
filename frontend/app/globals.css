@@ -1,50 +1,408 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
+@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================
+   FONTS  (local woff2, no CDN)
+   ============================================================ */
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/SpaceGrotesk-Variable.woff2") format("woff2-variations");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Outfit";
+  src: url("/fonts/Outfit-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Azeret Mono";
+  src: url("/fonts/AzeretMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Gambetta";
+  src: url("/fonts/Gambetta-Italic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* ============================================================
+   THEME TOKENS
+   ============================================================ */
+
 @theme inline {
-  /* Display font */
-  --font-display: var(--font-display);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+  /* Typography families */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Azeret Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-serif: "Gambetta", Georgia, "Times New Roman", serif;
+  --font-heading: var(--font-display);
 
-  /* Risk colors */
-  --color-risk-green: oklch(0.72 0.17 142);
-  --color-risk-yellow: oklch(0.8 0.16 84);
-  --color-risk-red: oklch(0.65 0.2 25);
+  /* Core surface colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
-  --color-background: oklch(0.13 0.01 260);
-  --color-foreground: oklch(0.93 0.01 260);
-  --color-card: oklch(0.16 0.01 260);
-  --color-card-foreground: oklch(0.93 0.01 260);
-  --color-popover: oklch(0.16 0.01 260);
-  --color-popover-foreground: oklch(0.93 0.01 260);
-  --color-primary: oklch(0.7 0.15 180);
-  --color-primary-foreground: oklch(0.13 0.01 260);
-  --color-secondary: oklch(0.22 0.01 260);
-  --color-secondary-foreground: oklch(0.93 0.01 260);
-  --color-muted: oklch(0.22 0.01 260);
-  --color-muted-foreground: oklch(0.6 0.01 260);
-  --color-accent: oklch(0.22 0.01 260);
-  --color-accent-foreground: oklch(0.93 0.01 260);
-  --color-destructive: oklch(0.65 0.2 25);
-  --color-destructive-foreground: oklch(0.93 0.01 260);
-  --color-border: oklch(0.25 0.01 260);
-  --color-input: oklch(0.25 0.01 260);
-  --color-ring: oklch(0.7 0.15 180);
-  --color-chart-1: oklch(0.7 0.15 180);
-  --color-chart-2: oklch(0.72 0.17 142);
-  --color-chart-3: oklch(0.8 0.16 84);
-  --color-chart-4: oklch(0.65 0.2 25);
-  --color-chart-5: oklch(0.7 0.12 300);
-  --color-sidebar-background: oklch(0.15 0.01 260);
-  --color-sidebar-foreground: oklch(0.93 0.01 260);
-  --color-sidebar-primary: oklch(0.7 0.15 180);
-  --color-sidebar-primary-foreground: oklch(0.13 0.01 260);
-  --color-sidebar-accent: oklch(0.22 0.01 260);
-  --color-sidebar-accent-foreground: oklch(0.93 0.01 260);
-  --color-sidebar-border: oklch(0.25 0.01 260);
-  --color-sidebar-ring: oklch(0.7 0.15 180);
-  --radius: 0.625rem;
+  /* Primary: ink */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  /* Secondary: subdued surface */
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  /* Muted */
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  /* Accent: hover surface */
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  /* Destructive (generic UI errors -- distinct from risk-high) */
+  --color-destructive: var(--destructive);
+
+  /* Borders & focus */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Paper surface (for analysis views / clause cards) */
+  --color-paper: var(--paper);
+  --color-paper-foreground: var(--paper-foreground);
+  --color-paper-rule: var(--paper-rule);
+
+  /* Risk palette -- USED ONLY inside clause analysis, never on marketing/landing */
+  --color-risk-low: var(--risk-low);
+  --color-risk-low-foreground: var(--risk-low-foreground);
+  --color-risk-low-soft: var(--risk-low-soft);
+  --color-risk-med: var(--risk-med);
+  --color-risk-med-foreground: var(--risk-med-foreground);
+  --color-risk-med-soft: var(--risk-med-soft);
+  --color-risk-high: var(--risk-high);
+  --color-risk-high-foreground: var(--risk-high-foreground);
+  --color-risk-high-soft: var(--risk-high-soft);
+
+  /* Chart colors (analysis view only) */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Radii -- small, crisp, document-y */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+
+  /* Motion curves */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* =========================================================
+     Type scale
+     Fluid via clamp(mobile, base + vw, desktop).
+     Tuned so 1440px reads identical to our reference design.
+     Ceilings kick in only at very wide screens (1920px+).
+     ========================================================= */
+  --text-display-xl: clamp(2.75rem, 1.4rem + 5.8vw, 6rem);
+  --text-display-xl--line-height: 1;
+  --text-display-xl--letter-spacing: -0.035em;
+
+  --text-display-lg: clamp(1.875rem, 0.95rem + 4vw, 3.75rem);
+  --text-display-lg--line-height: 1.05;
+  --text-display-lg--letter-spacing: -0.028em;
+
+  --text-display-md: clamp(3rem, 1.8rem + 5.4vw, 5.5rem);
+  --text-display-md--line-height: 0.9;
+  --text-display-md--letter-spacing: -0.04em;
+
+  --text-heading-lg: clamp(1.375rem, 1.25rem + 0.55vw, 1.75rem);
+  --text-heading-lg--line-height: 1.1;
+  --text-heading-lg--letter-spacing: -0.02em;
+
+  --text-heading-md: clamp(1rem, 0.97rem + 0.13vw, 1.0625rem);
+  --text-heading-md--line-height: 1.2;
+  --text-heading-md--letter-spacing: -0.01em;
+
+  --text-body-lg: clamp(1rem, 0.95rem + 0.22vw, 1.125rem);
+  --text-body-lg--line-height: 1.65;
+
+  --text-body: clamp(0.875rem, 0.85rem + 0.11vw, 0.9375rem);
+  --text-body--line-height: 1.65;
+
+  --text-body-sm: clamp(0.8125rem, 0.8rem + 0.06vw, 0.875rem);
+  --text-body-sm--line-height: 1.55;
+
+  --text-caption: clamp(0.625rem, 0.6rem + 0.11vw, 0.6875rem);
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.22em;
+
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 1.4;
+  --text-micro--letter-spacing: 0.16em;
+
+  /* =========================================================
+     Named spacing tokens for internal section rhythm.
+     Maps to Tailwind `gap-*`, `mb-*`, `space-y-*`.
+     ========================================================= */
+  --spacing-tight: 1rem; /* 16px */
+  --spacing-normal: 2rem; /* 32px */
+  --spacing-loose: 4rem; /* 64px */
+}
+
+/* ============================================================
+   LIGHT THEME  (primary)
+   Bond paper: warm ivory. Charcoal ink.
+   ============================================================ */
+
+:root {
+  --radius: 0.375rem;
+
+  --background: oklch(0.965 0.006 85);
+  --foreground: oklch(0.18 0.006 50);
+
+  --card: oklch(0.98 0.005 85);
+  --card-foreground: oklch(0.18 0.006 50);
+  --popover: oklch(0.98 0.005 85);
+  --popover-foreground: oklch(0.18 0.006 50);
+
+  --primary: oklch(0.18 0.006 50);
+  --primary-foreground: oklch(0.965 0.006 85);
+  --secondary: oklch(0.93 0.006 85);
+  --secondary-foreground: oklch(0.18 0.006 50);
+  --muted: oklch(0.92 0.006 85);
+  --muted-foreground: oklch(0.45 0.006 50);
+  --accent: oklch(0.9 0.006 85);
+  --accent-foreground: oklch(0.18 0.006 50);
+  --destructive: oklch(0.55 0.18 22);
+
+  --border: oklch(0.18 0.006 50 / 14%);
+  --input: oklch(0.18 0.006 50 / 20%);
+  --ring: oklch(0.18 0.006 50);
+
+  /* Paper / document surface (used inside analysis views) */
+  --paper: oklch(0.965 0.006 85);
+  --paper-foreground: oklch(0.18 0.006 50);
+  --paper-rule: oklch(0.18 0.006 50 / 22%);
+
+  /* Risk palette -- light mode */
+  --risk-low: oklch(0.48 0.09 155);
+  --risk-low-foreground: oklch(0.98 0.005 155);
+  --risk-low-soft: oklch(0.93 0.025 155);
+  --risk-med: oklch(0.6 0.13 72);
+  --risk-med-foreground: oklch(0.2 0.05 72);
+  --risk-med-soft: oklch(0.94 0.035 72);
+  --risk-high: oklch(0.48 0.17 25);
+  --risk-high-foreground: oklch(0.98 0.005 25);
+  --risk-high-soft: oklch(0.94 0.04 25);
+
+  --chart-1: oklch(0.3 0.006 50);
+  --chart-2: oklch(0.5 0.006 50);
+  --chart-3: oklch(0.65 0.006 50);
+  --chart-4: oklch(0.8 0.006 50);
+  --chart-5: oklch(0.9 0.006 50);
+
+  --sidebar: oklch(0.96 0.006 85);
+  --sidebar-foreground: oklch(0.18 0.006 50);
+  --sidebar-primary: oklch(0.18 0.006 50);
+  --sidebar-primary-foreground: oklch(0.965 0.006 85);
+  --sidebar-accent: oklch(0.9 0.006 85);
+  --sidebar-accent-foreground: oklch(0.18 0.006 50);
+  --sidebar-border: oklch(0.18 0.006 50 / 14%);
+  --sidebar-ring: oklch(0.18 0.006 50);
+}
+
+/* ============================================================
+   DARK THEME  (secondary)
+   Paper turned over: cool charcoal. Ivory ink.
+   ============================================================ */
+
+.dark {
+  --background: oklch(0.165 0.004 180);
+  --foreground: oklch(0.93 0.008 85);
+
+  --card: oklch(0.2 0.004 180);
+  --card-foreground: oklch(0.93 0.008 85);
+  --popover: oklch(0.2 0.004 180);
+  --popover-foreground: oklch(0.93 0.008 85);
+
+  --primary: oklch(0.93 0.008 85);
+  --primary-foreground: oklch(0.165 0.004 180);
+  --secondary: oklch(0.26 0.004 180);
+  --secondary-foreground: oklch(0.93 0.008 85);
+  --muted: oklch(0.24 0.004 180);
+  --muted-foreground: oklch(0.68 0.008 85);
+  --accent: oklch(0.28 0.004 180);
+  --accent-foreground: oklch(0.93 0.008 85);
+  --destructive: oklch(0.64 0.18 22);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.93 0.008 85);
+
+  --paper: oklch(0.2 0.004 180);
+  --paper-foreground: oklch(0.93 0.008 85);
+  --paper-rule: oklch(1 0 0 / 14%);
+
+  /* Risk palette -- dark mode */
+  --risk-low: oklch(0.7 0.13 155);
+  --risk-low-foreground: oklch(0.14 0.03 155);
+  --risk-low-soft: oklch(0.28 0.05 155 / 45%);
+  --risk-med: oklch(0.75 0.14 72);
+  --risk-med-foreground: oklch(0.14 0.04 72);
+  --risk-med-soft: oklch(0.3 0.06 72 / 45%);
+  --risk-high: oklch(0.66 0.18 25);
+  --risk-high-foreground: oklch(0.14 0.04 25);
+  --risk-high-soft: oklch(0.32 0.08 25 / 45%);
+
+  --chart-1: oklch(0.9 0.008 85);
+  --chart-2: oklch(0.72 0.008 85);
+  --chart-3: oklch(0.58 0.008 85);
+  --chart-4: oklch(0.42 0.008 85);
+  --chart-5: oklch(0.3 0.008 85);
+
+  --sidebar: oklch(0.18 0.004 180);
+  --sidebar-foreground: oklch(0.93 0.008 85);
+  --sidebar-primary: oklch(0.93 0.008 85);
+  --sidebar-primary-foreground: oklch(0.165 0.004 180);
+  --sidebar-accent: oklch(0.26 0.004 180);
+  --sidebar-accent-foreground: oklch(0.93 0.008 85);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.93 0.008 85);
+}
+
+/* ============================================================
+   BASE ELEMENTS
+   ============================================================ */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11", "cv01";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+    font-weight: 500;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    background: oklch(0.18 0.006 50 / 18%);
+    color: inherit;
+  }
+
+  .dark ::selection {
+    background: oklch(0.93 0.008 85 / 22%);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.18 0.006 50 / 18%);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.18 0.006 50 / 28%);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 10%);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: oklch(1 0 0 / 18%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Editorial italic helper -- Gambetta */
+  .font-editorial {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 500;
+  }
 }

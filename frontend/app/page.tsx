@@ -1,24 +1,25 @@
-export default function LandingPage() {
+import { SiteFooter } from "@/components/site/footer";
+import { SiteNav } from "@/components/site/nav";
+import { Hero } from "@/components/sections/hero";
+import { Specimen } from "@/components/sections/specimen";
+import { Process } from "@/components/sections/process";
+import { Provenance } from "@/components/sections/provenance";
+import { MarginRule } from "@/components/margin-rule";
+
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6">
-      <h1 className="font-display text-5xl font-bold tracking-tight">
-        ClauseGuard
-      </h1>
-      <p className="font-body text-lg text-muted-foreground max-w-md text-center">
-        AI-powered contract review for startups and freelancers.
-        Upload. Analyze. Negotiate with confidence.
-      </p>
-      <div className="flex gap-3">
-        <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-risk-green/20 text-risk-green">
-          Low Risk
-        </span>
-        <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-risk-yellow/20 text-risk-yellow">
-          Medium Risk
-        </span>
-        <span className="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium bg-risk-red/20 text-risk-red">
-          High Risk
-        </span>
-      </div>
-    </main>
+    <>
+      <SiteNav />
+      <main className="relative">
+        <MarginRule offsetClass="left-8 md:left-16 xl:left-20" />
+        <div className="mx-auto w-full max-w-[1400px]">
+          <Hero />
+          <Specimen />
+          <Process />
+          <Provenance />
+        </div>
+      </main>
+      <SiteFooter />
+    </>
   );
 }

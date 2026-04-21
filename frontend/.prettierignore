@@ -1,0 +1,20 @@
+# Next.js build output
+.next
+out
+build
+dist
+
+# Dependencies
+node_modules
+
+# Public static assets
+public
+
+# Lock files
+package-lock.json
+
+# Auto-generated
+next-env.d.ts
+
+# shadcn primitives (we didn't write these)
+components/ui
