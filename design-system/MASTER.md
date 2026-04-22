@@ -1,5 +1,5 @@
 # ClauseGuard Design System
-_v1.1 — April 2026_
+_v1.2 — April 2026_
 
 The single source of truth for visual, typographic, and interactive decisions.
 When building a new page or component, consult this document first. Deviations
@@ -167,6 +167,186 @@ centered caption + heading with centered two-card grid._
 
 ---
 
+## App chrome (authenticated surfaces)
+
+Authenticated pages live in the `(app)` route group and use a different
+chrome from the marketing site. Marketing is a magazine spread; the app
+is a workshop bench. Same stock, same ink, different gestures.
+
+**What stays from marketing**
+
+- Bond paper texture (persistent, fixed layer)
+- Color palette (ivory paper / charcoal ink, OKLCH tokens)
+- Type families (Space Grotesk / Outfit / Azeret Mono / Gambetta)
+- Type tokens (`text-body-sm`, `text-heading-md`, etc.)
+- Motion curves and durations
+- Hover/press interaction philosophy
+
+**What changes for app chrome**
+
+- Density. App pages compress vertically. No editorial rhythm to preserve.
+- Voice. Gambetta italic disappears from chrome (nav, headers, dialogs).
+  It can still appear in empty states and stat captions where editorial
+  warmth helps. Never in functional UI labels.
+- Layout gesture. Marketing uses asymmetric editorial spreads. App pages
+  use predictable grid: rail + top bar + content area.
+- Risk colors unlock. Dashboard badges, contract detail clause highlights,
+  status indicators, progress steps. Still scoped to analysis contexts —
+  they don't appear on settings, billing, profile, or other non-analysis
+  surfaces.
+
+### Layout
+
+```
+┌─────┬─────────────────────────────────────────────┐
+│     │  Top bar  (56px, sticky, no scroll-frost)   │
+│ Rail├─────────────────────────────────────────────┤
+│ 72px│                                             │
+│     │                                             │
+│ ↓   │  Content area                               │
+│     │  (max-width 1280px, left-aligned to rail)   │
+│     │                                             │
+└─────┴─────────────────────────────────────────────┘
+```
+
+**Rail (left navigation)**
+
+- Width: `72px` fixed, no collapse for Phase 4B (revisit if we add many items)
+- Background: `bg-sidebar` (already defined in tokens, palette-matched)
+- Right border: `border-r border-sidebar-border`
+- Sticky, full viewport height
+- Logo mark at top (the same square-with-dot mark from marketing nav, no wordmark)
+- Icon + caption stacked nav items: 24px Lucide icon, `text-caption` mono label
+  beneath. No wordmark labels — the rail is too narrow.
+- Active state: foreground icon + label + 2px left border in foreground color
+  flush against the rail's outer edge
+- Hover state: `bg-sidebar-accent` background, foreground color icon + label
+- Mobile: rail collapses to a bottom bar (same items, horizontal layout)
+  below `md` breakpoint
+
+**Top bar**
+
+- Height: `56px` (vs marketing's 72px — denser)
+- Background: `bg-background` solid
+- Bottom border: `border-b border-border/40`
+- Sticky, no scroll-frost behavior (the bar already sits on a tool surface,
+  there's no hero behind it earning the blur)
+- Left side: page title (`text-heading-md`, foreground)
+- Right side: account avatar (placeholder for Phase 4B), notifications stub
+- No mobile hamburger needed — the bottom rail handles primary nav
+
+**Content area**
+
+- Left padding: `pl-6 md:pl-10` (no margin-rule clearance — the rail already
+  provides the left edge)
+- Right padding: matches left
+- Max width: `1280px` (narrower than marketing's 1400px because there's no
+  side gesture room to fill)
+- Top padding: `pt-8 md:pt-10`
+- Bottom padding: `pb-16 md:pb-20`
+- Content sections within a page: `py-8` to `py-12` for vertical rhythm,
+  not the marketing `py-32+` scale
+
+### Type usage in app chrome
+
+The marketing type scale is correct. Specific app applications:
+
+| Element                          | Token             |
+|----------------------------------|-------------------|
+| Page title (top bar)             | `heading-md`      |
+| Page H1 (in content)             | `heading-lg`      |
+| Section headings within a page   | `heading-md`      |
+| Stat numbers (dashboard cards)   | `display-lg` (smaller stats), `display-md` (hero stats) |
+| Stat labels                      | `caption` mono    |
+| Table column headers             | `caption` mono    |
+| Table cell text                  | `body-sm`         |
+| Status badges                    | `caption` mono    |
+| Empty state heading              | `heading-lg`      |
+| Empty state body                 | `body`            |
+| Empty state editorial accent     | `font-editorial` permitted, sparingly |
+| Rail icon labels                 | `caption` mono    |
+
+### Risk color usage (app chrome)
+
+Risk colors are now in scope. They appear on:
+
+- **Dashboard contract list**: risk level pill on each row
+- **Contract detail page**: clause-level risk highlights, overall risk badge
+- **Progress tracker**: completed/in-progress steps may use risk color tokens
+  if conveying status (otherwise foreground)
+- **Stats cards**: "high-risk contracts" stat may use `risk-high` for the
+  number; "average risk" cards use neutral foreground
+
+Risk colors do NOT appear on:
+
+- Rail or top bar chrome
+- Buttons (still ink-on-paper)
+- Links (still ink-on-paper)
+- Settings, billing, profile pages
+- Empty states, loading states, error states (use `destructive` for errors)
+
+Use `bg-risk-low-soft` / `bg-risk-med-soft` / `bg-risk-high-soft` for
+fill backgrounds, with `text-risk-{level}` for the foreground text.
+
+### Interaction states (app-specific)
+
+**Rail nav item**
+
+- Default: `text-muted-foreground`, transparent background
+- Hover: `bg-sidebar-accent`, `text-sidebar-accent-foreground`
+- Active: `text-foreground`, 2px left border foreground, no background fill
+- Transition: 150ms colors, `ease-out-strong`
+
+**Table row**
+
+- Default: bottom border `border-border/40`
+- Hover: `bg-muted/40` background
+- Transition: 100ms background-color, `ease-out-strong`
+- Click target: full row clickable, navigates to detail
+
+**Risk pill**
+
+- Default: `bg-risk-{level}-soft text-risk-{level}` rounded-sm, `text-caption` mono uppercase, 8px horizontal padding, 2px vertical
+- No hover state (it's a label, not interactive)
+
+**Status badge (queued/processing/complete/failed)**
+
+- Default: `bg-muted text-muted-foreground` for non-active states
+- Active (processing): pulsing dot + label, foreground color
+- Complete: foreground color, no decoration
+- Failed: `text-destructive` (NOT risk-high — failure is system error, not contract risk)
+
+### Avatar placeholder
+
+For Phase 4B (no auth yet), the top bar avatar uses foreground initials
+on a `bg-muted` background. 32px square with `rounded-sm`, `text-caption`
+mono, foreground color. Initials hardcoded as "RD" until auth lands in
+Phase 4C.
+
+### What this looks like in practice
+
+The app shell should feel like opening a well-organized dossier folder.
+You see the work, not the chrome. The rail is quiet. The top bar is a
+thin reference strip. The content fills the room without performance.
+
+Compare to marketing: the landing page makes you feel something. The
+app makes you do something. Both speak the same visual language, but
+in different registers.
+
+### Anti-patterns specific to app chrome
+
+- Sidebar that uses sidebar-accent as a default background (kills the quiet)
+- Top bar with marketing-style scroll-frost (no hero to frost over)
+- Editorial Gambetta italic in chrome labels or button text
+- Risk colors on settings or billing pages
+- Section padding from the marketing scale (`py-32+`) inside app pages
+- `min-h-screen` on app content (same rule as marketing — explicit rhythm)
+- Drop shadows on cards (use border + minor inset, like marketing)
+- Avatar placeholder using a colored gradient (use foreground initials on
+  `bg-muted`)
+
+---
+
 ## Motion
 
 **Easing curves** (exposed as CSS variables)
@@ -293,6 +473,9 @@ components/
   site/
     nav.tsx                   # Sticky top navigation with scroll-frost
     footer.tsx                # Colophon with top dossier rule
+  app/
+    rail.tsx                  # Left navigation rail (72px) + mobile bottom bar
+    top-bar.tsx               # Sticky top bar with page title + avatar
   sections/
     hero.tsx                  # No. 001
     specimen.tsx              # No. 002
@@ -301,6 +484,8 @@ components/
   ui/
     section-header.tsx        # "No. 00X — label" caption
     cta-button.tsx            # Primary and ghost CTA variants
+    risk-pill.tsx             # Risk level label (analysis contexts only)
+    status-badge.tsx          # Contract processing status indicator
 ```
 
 ---
@@ -339,6 +524,16 @@ For new sections or pages:
 ---
 
 ## Changelog
+
+**v1.2 (April 2026)**
+- Added "App chrome (authenticated surfaces)" section
+- Defined rail (72px) + top bar (56px) + content area structure
+- Unlocked risk colors for analysis contexts in app surfaces
+- Documented type usage table for app-specific elements
+- Added app chrome interaction states (rail nav, table row, risk pill, status badge)
+- Added avatar placeholder spec (foreground initials on bg-muted)
+- Updated component directory to include `app/` and new `ui/` primitives
+- Listed app-specific anti-patterns
 
 **v1.1 (April 2026)**
 - Removed Pricing section (design + code)

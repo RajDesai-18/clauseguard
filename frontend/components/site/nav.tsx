@@ -60,7 +60,7 @@ export function SiteNav() {
             <NavLink href="#process">How it works</NavLink>
             <NavLink href="/docs">Docs</NavLink>
             <Link
-              href="/login"
+              href="/dashboard"
               className="border-foreground/50 text-caption text-foreground hover:border-foreground hover:bg-foreground hover:text-background rounded-[3px] border px-3.5 py-1.5 font-mono font-medium uppercase transition-all duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98]"
             >
               Sign in
@@ -113,7 +113,7 @@ export function SiteNav() {
           <MobileLink onClick={() => setMenuOpen(false)} href="/docs" index="003">
             Docs
           </MobileLink>
-          <MobileLink onClick={() => setMenuOpen(false)} href="/login" index="004" emphasis>
+          <MobileLink onClick={() => setMenuOpen(false)} href="/dashboard" index="004" emphasis>
             Sign in
           </MobileLink>
         </nav>
