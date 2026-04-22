@@ -17,6 +17,17 @@
 /.next/
 /out/
 
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # production
 /build
 
