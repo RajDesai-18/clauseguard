@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Upload, FileText, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { LogoMark } from "@/components/ui/logo";
 
 /**
  * Left navigation rail for the authenticated app shell.
@@ -32,14 +33,9 @@ export function AppRail() {
         <Link
           href="/dashboard"
           aria-label="ClauseGuard home"
-          className="border-sidebar-border flex h-14 items-center justify-center border-b"
+          className="group border-sidebar-border flex h-14 items-center justify-center border-b"
         >
-          <span
-            aria-hidden
-            className="border-foreground inline-flex size-[18px] items-center justify-center border"
-          >
-            <span className="bg-foreground size-[5px]" />
-          </span>
+          <LogoMark size="md" />
         </Link>
 
         <nav className="flex flex-1 flex-col items-stretch gap-0.5 py-3">
