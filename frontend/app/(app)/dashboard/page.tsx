@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { RiskPill } from "@/components/ui/risk-pill";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { listContracts, ApiError, UnauthorizedError } from "@/lib/api/api-client";
+import { listContracts, ApiError } from "@/lib/api/api-client";
 import type { ContractSummary } from "@/lib/api/api-client";
 import { formatRelativeDate } from "@/lib/mock-contracts";
 
@@ -16,9 +15,10 @@ export default async function DashboardPage() {
     const response = await listContracts({ size: 50 });
     contracts = response.items;
   } catch (err) {
-    if (err instanceof UnauthorizedError) {
-      redirect("/login?callbackUrl=/dashboard");
-    }
+    // The (app) layout guarantees a session, so 401 here would only
+    // mean session expired between the layout check and this fetch.
+    // Treat all errors uniformly as a connection problem; the user can
+    // refresh, which will re-trigger the layout's session check.
     fetchError =
       err instanceof ApiError
         ? `Couldn't reach the analysis server (${err.status}).`
