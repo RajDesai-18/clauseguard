@@ -5,13 +5,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, UploadFile, status
+from sqlalchemy import and_, func, select
 
-from app.api.deps import get_db
+from app.api.deps import CurrentUser, DBSession
 from app.core.storage import upload_file
 from app.models.clause import Clause
 from app.models.contract import Contract
@@ -25,8 +23,6 @@ from app.schemas.contract import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contracts", tags=["contracts"])
-
-DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 ALLOWED_TYPES = {
     "application/pdf",
@@ -43,11 +39,16 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 async def upload_contract(
     file: UploadFile,
     db: DBSession,
+    current_user: CurrentUser,
 ) -> ContractUploadResponse:
     """Upload a PDF or DOCX contract for analysis.
 
     Validates file type and size, computes content hash for idempotency,
-    uploads to MinIO, creates a DB record, and dispatches the Celery pipeline.
+    uploads to MinIO, creates a DB record scoped to the current user,
+    and dispatches the Celery pipeline.
+
+    Duplicate detection is per-user: the same file uploaded by two
+    different users produces two contracts.
     """
     # Validate content type
     if file.content_type not in ALLOWED_TYPES:
@@ -75,8 +76,17 @@ async def upload_contract(
     # Compute content hash for idempotency
     file_hash = hashlib.sha256(content).hexdigest()
 
-    # Check for duplicate upload
-    existing = await db.execute(select(Contract).where(Contract.file_hash == file_hash))
+    # Check for duplicate upload SCOPED to this user. The same file
+    # uploaded by another user is a different contract; we don't share
+    # analyses across users.
+    existing = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.file_hash == file_hash,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
     duplicate = existing.scalar_one_or_none()
     if duplicate is not None:
         return ContractUploadResponse(
@@ -104,9 +114,10 @@ async def upload_contract(
             detail="Failed to store file. Please try again.",
         ) from exc
 
-    # Create contract record
+    # Create contract record scoped to the current user
     contract = Contract(
         id=contract_id,
+        user_id=current_user.id,
         file_name=file.filename or "unknown",
         file_url=object_key,
         file_hash=file_hash,
@@ -121,7 +132,11 @@ async def upload_contract(
 
     run_pipeline.delay(str(contract_id))  # type: ignore
 
-    logger.info("Contract %s queued for processing", contract_id)
+    logger.info(
+        "Contract %s queued for processing (user=%s)",
+        contract_id,
+        current_user.id,
+    )
 
     return ContractUploadResponse(
         id=contract.id,
@@ -133,19 +148,26 @@ async def upload_contract(
 @router.get("", response_model=ContractListResponse)
 async def list_contracts(
     db: DBSession,
+    current_user: CurrentUser,
     page: int = 1,
     size: int = 20,
 ) -> ContractListResponse:
-    """List all contracts with pagination."""
+    """List contracts for the current user, paginated."""
     offset = (page - 1) * size
 
-    # Get total count
-    count_result = await db.execute(select(func.count(Contract.id)))
+    # Total count for this user
+    count_result = await db.execute(
+        select(func.count(Contract.id)).where(Contract.user_id == current_user.id)
+    )
     total = count_result.scalar_one()
 
-    # Get page of contracts
+    # Page of contracts
     result = await db.execute(
-        select(Contract).order_by(Contract.created_at.desc()).offset(offset).limit(size)
+        select(Contract)
+        .where(Contract.user_id == current_user.id)
+        .order_by(Contract.created_at.desc())
+        .offset(offset)
+        .limit(size)
     )
     contracts = result.scalars().all()
 
@@ -161,9 +183,21 @@ async def list_contracts(
 async def get_contract(
     contract_id: uuid.UUID,
     db: DBSession,
+    current_user: CurrentUser,
 ) -> ContractDetail:
-    """Get a single contract with full details."""
-    result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    """Get a single contract owned by the current user.
+
+    Returns 404 (not 403) if the contract exists but belongs to another
+    user. We don't leak existence across the user boundary.
+    """
+    result = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.id == contract_id,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
     contract = result.scalar_one_or_none()
     if contract is None:
         raise HTTPException(
@@ -177,10 +211,20 @@ async def get_contract(
 async def get_contract_clauses(
     contract_id: uuid.UUID,
     db: DBSession,
+    current_user: CurrentUser,
 ) -> ClauseListResponse:
-    """Get all analyzed clauses for a contract."""
-    # Verify contract exists
-    contract_result = await db.execute(select(Contract).where(Contract.id == contract_id))
+    """Get clauses for a contract owned by the current user.
+
+    Returns 404 if the contract doesn't exist or belongs to another user.
+    """
+    contract_result = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.id == contract_id,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
     contract = contract_result.scalar_one_or_none()
     if contract is None:
         raise HTTPException(

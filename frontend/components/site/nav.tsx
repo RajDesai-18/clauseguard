@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Logo } from "@/components/ui/logo";
 
 /**
  * Marketing site top navigation (a.k.a. "the top rail").
@@ -45,15 +46,7 @@ export function SiteNav() {
         }`}
       >
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4 pl-14 md:px-10 md:pl-24 xl:pl-28">
-          <Link href="/" className="group flex items-center gap-2.5" aria-label="ClauseGuard home">
-            <span
-              aria-hidden
-              className="border-foreground group-hover:bg-foreground inline-flex size-[18px] items-center justify-center border transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
-            >
-              <span className="bg-foreground group-hover:bg-background size-[5px] transition-colors duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]" />
-            </span>
-            <span className="font-display text-[15px] font-medium tracking-tight">ClauseGuard</span>
-          </Link>
+          <Logo />
 
           <nav className="hidden items-center gap-7 md:flex">
             <NavLink href="#product">Product</NavLink>

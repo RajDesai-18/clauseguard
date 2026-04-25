@@ -1,5 +1,5 @@
 # ClauseGuard Design System
-_v1.2 — April 2026_
+_v1.3 — April 2026_
 
 The single source of truth for visual, typographic, and interactive decisions.
 When building a new page or component, consult this document first. Deviations
@@ -232,7 +232,7 @@ is a workshop bench. Same stock, same ink, different gestures.
 - Sticky, no scroll-frost behavior (the bar already sits on a tool surface,
   there's no hero behind it earning the blur)
 - Left side: page title (`text-heading-md`, foreground)
-- Right side: account avatar (placeholder for Phase 4B), notifications stub
+- Right side: account avatar with dropdown (sign out, settings)
 - No mobile hamburger needed — the bottom rail handles primary nav
 
 **Content area**
@@ -316,12 +316,21 @@ fill backgrounds, with `text-risk-{level}` for the foreground text.
 - Complete: foreground color, no decoration
 - Failed: `text-destructive` (NOT risk-high — failure is system error, not contract risk)
 
-### Avatar placeholder
+### Avatar (top bar)
 
-For Phase 4B (no auth yet), the top bar avatar uses foreground initials
-on a `bg-muted` background. 32px square with `rounded-sm`, `text-caption`
-mono, foreground color. Initials hardcoded as "RD" until auth lands in
-Phase 4C.
+The avatar is a 32px square with `rounded-sm`, foreground initials on
+`bg-muted`, `text-caption` mono, foreground color. Subtle inset shadow
+(no drop shadow) gives a slight pressed-in quality on bond paper.
+
+Click opens an account dropdown:
+
+- "Signed in as {email}" label (caption mono, muted-foreground, non-clickable)
+- Settings link
+- Sign out button (foreground, hover destructive)
+
+If the user has a profile image (e.g. from Google OAuth), the image
+replaces the initials inside the same 32px square frame, no border radius
+change.
 
 ### What this looks like in practice
 
@@ -342,8 +351,145 @@ in different registers.
 - Section padding from the marketing scale (`py-32+`) inside app pages
 - `min-h-screen` on app content (same rule as marketing — explicit rhythm)
 - Drop shadows on cards (use border + minor inset, like marketing)
-- Avatar placeholder using a colored gradient (use foreground initials on
-  `bg-muted`)
+- Avatar that uses a colored gradient (use foreground initials on `bg-muted`,
+  or the user's profile image)
+
+---
+
+## Auth chrome (public transactional surfaces)
+
+Auth pages — `/login` and `/signup` — sit in a third register: public-facing
+like marketing, transactional like app chrome. They use the marketing visual
+language but compress to a single centered card. The bond paper persists.
+The rail does not appear (the user has nothing to navigate yet). The top bar
+is reduced to a logo-only strip with a single ghost link to the opposite auth
+mode.
+
+**What stays from marketing**
+
+- Bond paper texture, color tokens, type families
+- Section number gesture ("No. 005 — Sign in")
+- Gambetta italic permitted on page heading (one word, max one usage per page)
+- Editorial pacing in the supporting copy beneath the form
+
+**What changes for auth chrome**
+
+- No left rail. No app top bar.
+- A simplified top strip with logo mark + wordmark on the left, ghost link
+  on the right ("Already have an account? Sign in" or inverse).
+- Centered card composition. The card is bond paper too — same surface as
+  the page, set apart by a hairline rule and slightly more deliberate
+  internal padding.
+- Form inputs are bond-paper styled: no boxed input field. A single hairline
+  rule beneath the label, value reads as ink on paper. Focus state thickens
+  the rule and shifts it to foreground.
+- Primary CTA: filled ink button (same as marketing primary).
+- Google OAuth: ghost-bordered button with the Google G mark on the left.
+  Sits below the email/password block, separated by a thin rule with "or"
+  inset.
+- No risk colors anywhere on auth pages.
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────┐
+│  [Logo] ClauseGuard          Already have? →    │  56px strip
+├─────────────────────────────────────────────────┤
+│                                                 │
+│                                                 │
+│              ┌──────────────────┐               │
+│              │ No. 005 — Sign in│               │
+│              │                  │               │
+│              │ Read the         │               │
+│              │ *fine print.*    │               │  centered card
+│              │                  │               │  max-w-[420px]
+│              │ [Email]          │               │
+│              │ [Password]       │               │
+│              │                  │               │
+│              │ [Sign in]        │               │
+│              │ ────── or ─────  │               │
+│              │ [G Continue with]│               │
+│              └──────────────────┘               │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+**Top strip**
+
+- Height: `56px` (matches app chrome top bar)
+- Background: `bg-background` solid
+- Bottom border: `border-b border-border/40`
+- Left: logo mark (square+dot) + "ClauseGuard" wordmark, links to `/`
+- Right: ghost text link to opposite auth mode ("Don't have an account?
+  Sign up" or inverse), `text-caption` mono, hover underlines
+
+**Card**
+
+- Max width: `420px`
+- Centered horizontally and vertically in the remaining viewport
+- Padding: `p-10 md:p-12`
+- Background: same `bg-background` as page (bond paper reads through)
+- Border: `1px solid border-border/60`, no shadow, no rounding above `2px`
+- Subtle inner top rule: 1px hairline at `border` color, sets off the
+  section number from the form
+
+**Form inputs (bond-paper style)**
+
+- No `<input>` border-box treatment
+- Label: `text-caption` mono uppercase, `text-muted-foreground`, sits above
+  the input with `mb-2`
+- Input: bare `<input>` with `border-b border-border/60` and `py-2.5`
+  vertical padding, no horizontal padding (aligns with rule edges),
+  `bg-transparent`, `text-body` foreground
+- Focus: rule thickens to 2px, shifts to `border-foreground`. Transition
+  150ms `ease-out-strong`. No box-shadow ring.
+- Error: rule shifts to `border-destructive`, helper text below in
+  `text-destructive`, `text-caption`
+- Filled state: no visual change from default (the rule is enough)
+
+**OAuth button (Google)**
+
+- Variant: ghost (border-only)
+- Border: `1px solid border-foreground/30`
+- Hover: border thickens to `border-foreground/60`, no fill
+- Padding: `py-3 px-4`, full width
+- Layout: Google G mark (16px) left, label centered visually
+- Label: "Continue with Google", `text-body-sm`
+- No risk colors. The official Google G mark retains its colors only inside
+  the icon mark itself, never on chrome
+
+**"or" divider**
+
+- Thin rule on either side of the word "or"
+- "or" in `text-caption` mono lowercase, `text-muted-foreground`
+- Margin: `my-6` between primary CTA block and OAuth block
+
+### Type usage on auth pages
+
+| Element                              | Token                                      |
+|--------------------------------------|--------------------------------------------|
+| Section number ("No. 005 — Sign in") | `caption` mono                             |
+| Page heading                         | `display-lg`, with one Gambetta italic word permitted |
+| Supporting copy beneath heading      | `body-sm`, muted-foreground                |
+| Form label                           | `caption` mono uppercase                   |
+| Form input value                     | `body`                                     |
+| Helper text / error                  | `caption` mono                             |
+| Primary CTA label                    | `body-sm` font-display medium              |
+| OAuth button label                   | `body-sm`                                  |
+| Footer link beneath card             | `caption` mono                             |
+
+### Anti-patterns specific to auth chrome
+
+- Boxed input fields (use the bond-paper rule treatment)
+- Card with rounded corners > 2px (we are paper, not iOS)
+- Drop shadow on the card (use border + persistent texture)
+- Risk colors on auth pages (errors are `destructive`, success is
+  foreground transition to next page)
+- "Welcome back!" or other warmth tropes (the editorial pull-quote
+  earns the warmth, not the chrome copy)
+- Animated success states (the redirect is the success state)
+- Showing/hiding password via inline eye icon (use a separate small
+  text toggle below the input if needed; the eye icon is overused)
 
 ---
 
@@ -473,9 +619,14 @@ components/
   site/
     nav.tsx                   # Sticky top navigation with scroll-frost
     footer.tsx                # Colophon with top dossier rule
-  app/
+  shell/
     rail.tsx                  # Left navigation rail (72px) + mobile bottom bar
-    top-bar.tsx               # Sticky top bar with page title + avatar
+    top-bar.tsx               # Sticky top bar with page title + account dropdown
+  auth/
+    auth-strip.tsx            # Simplified top strip (logo + ghost link)
+    auth-card.tsx             # Centered card shell for /login and /signup
+    auth-input.tsx            # Bond-paper styled form input
+    google-button.tsx         # Google OAuth ghost button
   sections/
     hero.tsx                  # No. 001
     specimen.tsx              # No. 002
@@ -524,6 +675,16 @@ For new sections or pages:
 ---
 
 ## Changelog
+
+**v1.3 (April 2026)**
+- Added "Auth chrome (public transactional surfaces)" section
+- Defined auth page layout: simplified top strip + centered card
+- Specified bond-paper input treatment (hairline rule, no box)
+- Specified Google OAuth ghost button pattern
+- Reconciled component directory: `app/` → `shell/` (matches Phase 4B reality)
+- Added `auth/` directory to component map
+- Updated avatar spec to support profile images (Google OAuth) + dropdown
+- Listed auth-specific anti-patterns
 
 **v1.2 (April 2026)**
 - Added "App chrome (authenticated surfaces)" section

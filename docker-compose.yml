@@ -115,18 +115,6 @@ services:
     depends_on:
       - worker
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://api:8000
-    depends_on:
-      api:
-        condition: service_healthy
-
 volumes:
   pgdata:
   minio_data:
