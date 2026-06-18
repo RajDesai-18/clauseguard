@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft, Download } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { ProgressTracker } from "@/components/features/progress-tracker";
 import { RiskPill } from "@/components/ui/risk-pill";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ClauseList } from "@/components/contract/clause-list";
 import type { ContractStatus } from "@/components/ui/status-badge";
 import type { StreamStatus } from "@/lib/hooks/use-contract-stream";
+import { ProgressTracker } from "@/components/features/progress-tracker";
+import { getContractClient, type ClauseDetail } from "@/lib/api/api-client";
 
 const PROCESSING_STATUSES: ContractStatus[] = ["queued", "parsing", "analyzing", "scoring"];
 
@@ -25,29 +27,26 @@ interface Contract {
 
 interface Props {
   contract: Contract;
+  clauses: ClauseDetail[];
 }
 
-export function ContractDetailView({ contract: initialContract }: Props) {
+export function ContractDetailView({ contract: initialContract, clauses }: Props) {
   const [status, setStatus] = useState<ContractStatus>(initialContract.status as ContractStatus);
   const [contract, setContract] = useState(initialContract);
   const isProcessing = PROCESSING_STATUSES.includes(status);
 
-  // Refetch contract details once SSE reports terminal state, so the
-  // completion stub can show the final clause_count, overall_risk, etc.
   useEffect(() => {
     if (isProcessing) return;
     if (status === contract.status) return;
 
     let cancelled = false;
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-    fetch(`${apiUrl}/api/v1/contracts/${initialContract.id}`)
-      .then((res) => res.json())
+    getContractClient(initialContract.id)
       .then((data) => {
         if (!cancelled) setContract(data);
       })
       .catch(() => {
-        // ignore; user can refresh manually
+        // Silent: page already shows initial data. Refresh to retry.
       });
 
     return () => {
@@ -56,7 +55,6 @@ export function ContractDetailView({ contract: initialContract }: Props) {
   }, [isProcessing, status, contract.status, initialContract.id]);
 
   const handleStreamStatusChange = (next: StreamStatus) => {
-    // Only mirror states that map cleanly to ContractStatus.
     if (
       next === "queued" ||
       next === "parsing" ||
@@ -96,6 +94,16 @@ export function ContractDetailView({ contract: initialContract }: Props) {
               )}
             </div>
           </div>
+          {status === "complete" && (
+            <a
+              href={`/api/contracts/${initialContract.id}/export`}
+              download
+              className="border-border bg-card hover:bg-foreground/4 hover:border-border/80 focus-visible:border-foreground focus-visible:ring-foreground/30 focus-visible:bg-foreground/4 focus-visible:ring-2 focus-visible:ring-offset-0 text-foreground/90 hover:text-foreground focus-visible:text-foreground inline-flex items-center gap-2 rounded-sm border px-3 py-2 font-mono text-[11px] uppercase tracking-[0.08em] transition-colors duration-150 focus-visible:outline-none"
+            >
+              <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
+              Download review
+            </a>
+          )}
         </div>
       </header>
 
@@ -105,13 +113,13 @@ export function ContractDetailView({ contract: initialContract }: Props) {
           onStatusChange={handleStreamStatusChange}
         />
       ) : (
-        <CompletionStub contract={contract} />
+        <CompletionView contract={contract} clauses={clauses} />
       )}
     </div>
   );
 }
 
-function CompletionStub({ contract }: { contract: Contract }) {
+function CompletionView({ contract, clauses }: { contract: Contract; clauses: ClauseDetail[] }) {
   if (contract.status === "failed") {
     return (
       <div className="border-destructive/40 bg-destructive/5 rounded-sm border px-6 py-8">
@@ -125,29 +133,26 @@ function CompletionStub({ contract }: { contract: Contract }) {
   }
 
   return (
-    <div className="border-border/40 bg-card space-y-6 rounded-sm border p-6">
-      <div>
-        <p className="text-caption text-muted-foreground mb-2 font-mono uppercase">
-          Analysis complete
-        </p>
-        <h3 className="text-heading-md font-display text-foreground font-medium">
-          {contract.clause_count} clauses analyzed
-        </h3>
-      </div>
-
-      {contract.summary && (
+    <div className="space-y-12">
+      <section className="border-border/40 bg-card space-y-6 rounded-sm border p-6">
         <div>
-          <p className="text-caption text-muted-foreground mb-2 font-mono uppercase">Summary</p>
-          <p className="text-body text-foreground max-w-[70ch]">{contract.summary}</p>
+          <p className="text-body-sm text-muted-foreground mb-2 font-mono uppercase">
+            Analysis complete
+          </p>
+          <h3 className="text-heading-md font-display text-foreground font-medium">
+            {contract.clause_count} clauses analyzed
+          </h3>
         </div>
-      )}
 
-      <div className="border-border/40 border-t pt-6">
-        <p className="text-body-sm text-muted-foreground font-editorial italic">
-          The full clause-by-clause analysis view ships in Phase 5. For now, this is the landing
-          pad.
-        </p>
-      </div>
+        {contract.summary && (
+          <div>
+            <p className="text-body-sm text-muted-foreground mb-2 font-mono uppercase">Summary</p>
+            <p className="text-body text-foreground">{contract.summary}</p>
+          </div>
+        )}
+      </section>
+
+      <ClauseList clauses={clauses} />
     </div>
   );
 }

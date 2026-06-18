@@ -57,3 +57,21 @@ def download_file(object_name: str) -> bytes:
         Key=object_name,
     )
     return response["Body"].read()
+
+
+def delete_file(object_name: str) -> None:
+    """Delete a file from MinIO.
+
+    Idempotent: deleting a non-existent object is treated as success.
+    MinIO returns 204 for both "deleted" and "didn't exist" cases by
+    default, which matches S3's contract.
+    """
+    client = get_s3_client()
+    try:
+        client.delete_object(
+            Bucket=settings.minio_bucket,
+            Key=object_name,
+        )
+    except ClientError:
+        logger.exception("Failed to delete object %s from MinIO", object_name)
+        raise
