@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import Redis from "ioredis";
+import { ApiError, UnauthorizedError, getContract } from "@/lib/api/api-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,25 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
 
   if (!isValidUuid(id)) {
     return new Response("Invalid contract id", { status: 400 });
+  }
+
+  // Authorize before subscribing. The FastAPI backend is the source of
+  // truth for ownership: 401 means no valid session cookie, 404 means
+  // the contract doesn't exist OR belongs to a different user (the
+  // backend deliberately doesn't leak existence across users, so we
+  // mirror that behaviour here).
+  try {
+    await getContract(id);
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+    if (err instanceof ApiError && err.status === 404) {
+      return new Response("Not found", { status: 404 });
+    }
+    // Any other backend error (network, 500, etc.) shouldn't downgrade
+    // into a silent subscription. Fail closed.
+    return new Response("Upstream authorization check failed", { status: 502 });
   }
 
   const channel = `${CHANNEL_PREFIX}${id}`;

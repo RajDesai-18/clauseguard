@@ -69,6 +69,10 @@ services:
       RABBITMQ_URL: amqp://clauseguard:secret@rabbitmq:5672/
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,7 +92,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.celery_app worker --loglevel=info -Q default,parse,analyze,dlq --concurrency=4
     env_file:
       - .env
     environment:
@@ -96,6 +100,10 @@ services:
       RABBITMQ_URL: amqp://clauseguard:secret@rabbitmq:5672/
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/scripts:/app/scripts
     depends_on:
       api:
         condition: service_healthy

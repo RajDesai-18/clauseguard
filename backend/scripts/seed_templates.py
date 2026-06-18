@@ -1,26 +1,45 @@
-"""Seed the clause_templates table with market-standard clauses."""
+"""Seed the clause_templates table with market-standard clauses.
+
+Embeddings are generated via OpenAI text-embedding-3-small (1536-dim)
+to match the semantic_cache and template_matcher pipelines. Templates
+are upserted by (contract_type, clause_type) key. Default behavior:
+insert new templates, skip existing ones. Use --update to overwrite.
+
+Usage:
+    docker compose exec api python -m scripts.seed_templates
+    docker compose exec api python -m scripts.seed_templates --dry-run
+    docker compose exec api python -m scripts.seed_templates --update
+"""
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
-import uuid
-from datetime import UTC, datetime
+from collections import Counter
+from dataclasses import dataclass
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
 
-# Add backend to path so imports work
+# Ensure we can run as `python -m scripts.seed_templates` from /app
 sys.path.insert(0, ".")
 
 from app.core.config import settings
 from app.models.clause_template import ClauseTemplate
 from app.services.embedding import generate_embeddings_batch
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger("seed_templates")
 
-# Market-standard clause templates organized by contract type
+
+# Market-standard clause templates organized by contract type.
+# To add new templates: append a dict with contract_type, clause_type,
+# standard_text, and source fields. The script will insert any new
+# (contract_type, clause_type) combinations on next run.
 TEMPLATES = [
     # ---- NDA Templates ----
     {
@@ -533,60 +552,163 @@ TEMPLATES = [
 ]
 
 
-def seed_templates() -> None:
-    """Seed the clause_templates table with market-standard clauses."""
+@dataclass
+class SeedResult:
+    """Summary of seed run."""
+
+    inserted: int
+    updated: int
+    skipped: int
+
+
+def _build_engine():
     sync_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
-    engine = create_engine(sync_url)
-    session = Session(engine)
+    return create_engine(sync_url, future=True)
+
+
+def seed(*, dry_run: bool = False, update: bool = False) -> SeedResult:
+    """Seed clause_templates idempotently.
+
+    Each template is keyed by (contract_type, clause_type). If the key
+    already exists, it is skipped unless --update is passed, in which
+    case the existing row's standard_text, embedding, and source are
+    overwritten.
+
+    Args:
+        dry_run: Generate embeddings and report what would happen,
+            but do not write to the DB.
+        update: Overwrite existing templates that share a key.
+
+    Returns:
+        SeedResult with counts.
+    """
+    if not TEMPLATES:
+        logger.error("TEMPLATES is empty")
+        return SeedResult(0, 0, 0)
+
+    logger.info(
+        "Seeding %d templates (dry_run=%s, update=%s)",
+        len(TEMPLATES),
+        dry_run,
+        update,
+    )
+
+    # Generate all embeddings in one batched call before opening a DB
+    # transaction. If embedding fails, we abort cleanly without partial
+    # writes.
+    logger.info("Generating embeddings for %d templates...", len(TEMPLATES))
+    texts = [t["standard_text"] for t in TEMPLATES]
+    embeddings = generate_embeddings_batch(texts)
+    if len(embeddings) != len(TEMPLATES):
+        raise RuntimeError(
+            f"Embedding count mismatch: got {len(embeddings)}, expected {len(TEMPLATES)}"
+        )
+    logger.info("Embeddings generated")
+
+    engine = _build_engine()
+    session_factory = sessionmaker(bind=engine, future=True)
+    session: Session = session_factory()
+
+    inserted = 0
+    updated = 0
+    skipped = 0
 
     try:
-        # Check if templates already exist
-        existing_count = session.query(ClauseTemplate).count()
-        if existing_count > 0:
-            logger.info(
-                "Found %d existing templates. Clearing and re-seeding.",
-                existing_count,
-            )
-            session.query(ClauseTemplate).delete()
-            session.commit()
-
-        # Generate embeddings for all template texts in batch
-        texts = [t["standard_text"] for t in TEMPLATES]
-        logger.info("Generating embeddings for %d templates...", len(texts))
-        embeddings = generate_embeddings_batch(texts)
-        logger.info("Embeddings generated successfully.")
-
-        # Insert templates with embeddings
         for template_data, embedding in zip(TEMPLATES, embeddings, strict=True):
-            template = ClauseTemplate(
-                id=uuid.uuid4(),
-                contract_type=template_data["contract_type"],
-                clause_type=template_data["clause_type"],
-                standard_text=template_data["standard_text"],
-                embedding=embedding,
-                source=template_data.get("source"),
-                created_at=datetime.now(UTC),
-            )
-            session.add(template)
+            contract_type = template_data["contract_type"]
+            clause_type = template_data["clause_type"]
+            standard_text = template_data["standard_text"]
+            source = template_data.get("source")
 
-        session.commit()
-        logger.info("Successfully seeded %d clause templates.", len(TEMPLATES))
+            existing = session.execute(
+                select(ClauseTemplate).where(
+                    and_(
+                        ClauseTemplate.contract_type == contract_type,
+                        ClauseTemplate.clause_type == clause_type,
+                    )
+                )
+            ).scalar_one_or_none()
 
-        # Print summary
-        from collections import Counter
+            if existing is not None:
+                if not update:
+                    logger.info(
+                        "Skip: %s/%s exists (use --update to overwrite)",
+                        contract_type,
+                        clause_type,
+                    )
+                    skipped += 1
+                    continue
+                if dry_run:
+                    logger.info("[DRY RUN] Would update: %s/%s", contract_type, clause_type)
+                else:
+                    existing.standard_text = standard_text
+                    existing.embedding = embedding
+                    existing.source = source
+                    logger.info("Updated: %s/%s", contract_type, clause_type)
+                updated += 1
+            else:
+                if dry_run:
+                    logger.info("[DRY RUN] Would insert: %s/%s", contract_type, clause_type)
+                else:
+                    template = ClauseTemplate(
+                        contract_type=contract_type,
+                        clause_type=clause_type,
+                        standard_text=standard_text,
+                        embedding=embedding,
+                        source=source,
+                    )
+                    session.add(template)
+                    logger.info("Inserted: %s/%s", contract_type, clause_type)
+                inserted += 1
 
-        type_counts = Counter(t["contract_type"] for t in TEMPLATES)
-        for contract_type, count in sorted(type_counts.items()):
-            logger.info("  %s: %d templates", contract_type, count)
+        if dry_run:
+            session.rollback()
+            logger.info("[DRY RUN] Rolled back; no changes persisted")
+        else:
+            session.commit()
+            logger.info("Committed seed transaction")
 
     except Exception:
-        logger.exception("Failed to seed templates")
+        logger.exception("Seed failed; rolling back")
         session.rollback()
         raise
     finally:
         session.close()
         engine.dispose()
 
+    # Summary by contract_type
+    type_counts = Counter(t["contract_type"] for t in TEMPLATES)
+    for contract_type, count in sorted(type_counts.items()):
+        logger.info("  %s: %d templates in source data", contract_type, count)
+
+    return SeedResult(inserted=inserted, updated=updated, skipped=skipped)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Seed clause_templates with market-standard clauses"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would happen, don't write to DB",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Overwrite existing templates with same (contract_type, clause_type) key",
+    )
+    args = parser.parse_args()
+
+    result = seed(dry_run=args.dry_run, update=args.update)
+    logger.info(
+        "Seed complete: %d inserted, %d updated, %d skipped",
+        result.inserted,
+        result.updated,
+        result.skipped,
+    )
+    return 0
+
 
 if __name__ == "__main__":
-    seed_templates()
+    sys.exit(main())

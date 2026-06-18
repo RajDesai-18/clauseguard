@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import uuid
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
 
 from app.api.deps import CurrentUser, DBSession
-from app.core.storage import upload_file
+from app.core.storage import delete_file, upload_file
 from app.models.clause import Clause
 from app.models.contract import Contract
 from app.schemas.clause import ClauseListResponse, ClauseResponse
@@ -20,6 +22,7 @@ from app.schemas.contract import (
     ContractSummary,
     ContractUploadResponse,
 )
+from app.services.review_exporter import build_review_docx
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/contracts", tags=["contracts"])
@@ -130,7 +133,7 @@ async def upload_contract(
     # Dispatch Celery pipeline
     from app.tasks.pipeline import run_pipeline
 
-    run_pipeline.delay(str(contract_id))  # type: ignore
+    run_pipeline(str(contract_id))
 
     logger.info(
         "Contract %s queued for processing (user=%s)",
@@ -245,3 +248,148 @@ async def get_contract_clauses(
         clause_count=len(clauses),
         clauses=[ClauseResponse.model_validate(c) for c in clauses],
     )
+
+
+@router.get("/{contract_id}/export")
+async def export_contract_review(
+    contract_id: uuid.UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Generate and download a Word document review of the contract.
+
+    Returns a `.docx` file with the overall risk assessment, every
+    risky clause's analysis (original text, plain-English explanation,
+    market comparison, suggested revision), and a compact list of
+    clauses reviewed without issue.
+
+    Only available for contracts in terminal `complete` status. Returns
+    409 for in-flight or failed contracts; the analysis isn't ready or
+    is known to have failed.
+    """
+    contract_result = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.id == contract_id,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
+    contract = contract_result.scalar_one_or_none()
+    if contract is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found.",
+        )
+
+    if contract.status != "complete":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Contract analysis is not complete. Current status: {contract.status}."),
+        )
+
+    clauses_result = await db.execute(
+        select(Clause).where(Clause.contract_id == contract_id).order_by(Clause.position)
+    )
+    clauses = clauses_result.scalars().all()
+
+    try:
+        buffer = build_review_docx(contract, clauses)
+    except Exception as exc:
+        logger.exception("Failed to generate review DOCX for contract %s", contract_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate review document.",
+        ) from exc
+
+    filename = _build_export_filename(contract.file_name)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            # Prevent intermediate caches from serving a stale review
+            # if the user re-analyses the contract.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _build_export_filename(original: str) -> str:
+    """Construct the download filename.
+
+    Strips the source extension, sanitises the remainder to a portable
+    character set, and prefixes with `clauseguard-review-`. Falls back
+    to a safe default if sanitisation leaves nothing useful.
+    """
+    stem = re.sub(r"\.(pdf|docx|doc)$", "", original, flags=re.IGNORECASE)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
+    if not safe:
+        safe = "contract"
+    return f"clauseguard-review-{safe}.docx"
+
+
+@router.delete(
+    "/{contract_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_contract(
+    contract_id: uuid.UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> Response:
+    """Delete a contract permanently.
+
+    Removes the MinIO file first, then the contract row. Clauses are
+    cascade-deleted via the SQLAlchemy relationship. Returns 404 if the
+    contract doesn't exist OR belongs to a different user (no cross-user
+    existence leak, consistent with the rest of this router).
+
+    Order matters: file before row. If the file delete fails, the row
+    stays so the user can retry. Doing it the other way risks an
+    orphaned MinIO object that we can't track because the only record
+    pointing at it just got deleted.
+    """
+    result = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.id == contract_id,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
+    contract = result.scalar_one_or_none()
+    if contract is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found.",
+        )
+
+    # Snapshot the file key before the row goes away.
+    file_url = contract.file_url
+
+    try:
+        delete_file(file_url)
+    except Exception as exc:
+        logger.exception(
+            "Failed to delete MinIO object %s for contract %s",
+            file_url,
+            contract_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to delete contract file. Please try again.",
+        ) from exc
+
+    await db.delete(contract)
+    await db.commit()
+
+    logger.info(
+        "Contract %s deleted (user=%s, file=%s)",
+        contract_id,
+        current_user.id,
+        file_url,
+    )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

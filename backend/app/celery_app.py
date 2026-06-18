@@ -35,12 +35,17 @@ celery_app.conf.update(
         "app.tasks.classify.*": {"queue": "analyze"},
         "app.tasks.score.*": {"queue": "analyze"},
         "app.tasks.redline.*": {"queue": "analyze"},
+        "app.tasks.finalize.*": {"queue": "analyze"},
+        "app.tasks.dispatchers.*": {"queue": "default"},
     },
     task_default_retry_delay=2,
     task_max_retries=3,
 )
 
-celery_app.autodiscover_tasks(["app.tasks"])
+# Tasks are imported explicitly in app/tasks/__init__.py.
+# Autodiscovery is intentionally not used because it can silently
+# skip modules with import errors, masking real problems.
+import app.tasks  # noqa: E402, F401
 
 
 @celery_app.task(name="app.tasks.ping")
