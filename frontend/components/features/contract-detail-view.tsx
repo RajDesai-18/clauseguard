@@ -98,7 +98,7 @@ export function ContractDetailView({ contract: initialContract, clauses }: Props
             <a
               href={`/api/contracts/${initialContract.id}/export`}
               download
-              className="border-border bg-card hover:bg-foreground/4 hover:border-border/80 focus-visible:border-foreground focus-visible:ring-foreground/30 focus-visible:bg-foreground/4 focus-visible:ring-2 focus-visible:ring-offset-0 text-foreground/90 hover:text-foreground focus-visible:text-foreground inline-flex items-center gap-2 rounded-sm border px-3 py-2 font-mono text-[11px] uppercase tracking-[0.08em] transition-colors duration-150 focus-visible:outline-none"
+              className="border-border bg-card hover:bg-foreground/4 hover:border-border/80 focus-visible:border-foreground focus-visible:ring-foreground/30 focus-visible:bg-foreground/4 text-foreground/90 hover:text-foreground focus-visible:text-foreground inline-flex items-center gap-2 rounded-sm border px-3 py-2 font-mono text-[11px] tracking-[0.08em] uppercase transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-none"
             >
               <Download className="size-3.5" strokeWidth={1.5} aria-hidden />
               Download review

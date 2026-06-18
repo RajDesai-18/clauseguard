@@ -25,12 +25,12 @@ export function ClauseList({ clauses }: Props) {
   if (sorted.length === 0) {
     return (
       <section className="border-border/40 mx-auto rounded-sm border border-dashed p-6">
-        <p className="text-caption text-muted-foreground font-mono uppercase tracking-[0.08em]">
+        <p className="text-caption text-muted-foreground font-mono tracking-[0.08em] uppercase">
           No clauses
         </p>
         <p className="text-body text-foreground mt-2">
-          We didn&rsquo;t extract any clauses from this document. The file may have been empty or
-          in an unexpected format.
+          We didn&rsquo;t extract any clauses from this document. The file may have been empty or in
+          an unexpected format.
         </p>
       </section>
     );
@@ -39,7 +39,7 @@ export function ClauseList({ clauses }: Props) {
   return (
     <section className="mx-auto">
       <header className="mb-14 space-y-2">
-        <p className="text-body text-muted-foreground font-mono uppercase tracking-[0.08em]">
+        <p className="text-body text-muted-foreground font-mono tracking-[0.08em] uppercase">
           Annotated review
         </p>
         <p className="text-muted-foreground text-[14px] leading-[1.65]">
