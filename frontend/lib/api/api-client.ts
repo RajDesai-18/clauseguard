@@ -12,6 +12,7 @@ export interface ContractSummary {
   status: ContractStatus;
   overall_risk: RiskLevel | null;
   clause_count: number;
+  degraded_reason: string | null;
   created_at: string;
   analyzed_at: string | null;
 }
@@ -68,7 +69,9 @@ export interface ClauseListResponse {
 export class ApiError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
+    public code?: string,
+    public requestId?: string
   ) {
     super(message);
     this.name = "ApiError";
@@ -84,6 +87,37 @@ export class UnauthorizedError extends ApiError {
     super(message, 401);
     this.name = "UnauthorizedError";
   }
+}
+
+/**
+ * Parse the backend's structured error envelope from a failed response.
+ *
+ * The API returns { error: { code, message, request_id, details } } on
+ * every error (see backend app/core/errors.py). We pull the human
+ * message, the stable code, and the request_id so the UI can show a
+ * useful message and a support reference instead of a bare status.
+ * Falls back gracefully if the body isn't our envelope shape.
+ */
+async function parseApiError(res: Response): Promise<ApiError> {
+  let message = `API request failed: ${res.statusText}`;
+  let code: string | undefined;
+  let requestId: string | undefined;
+
+  try {
+    const body = await res.json();
+    if (body?.error && typeof body.error === "object") {
+      if (typeof body.error.message === "string") message = body.error.message;
+      if (typeof body.error.code === "string") code = body.error.code;
+      if (typeof body.error.request_id === "string") requestId = body.error.request_id;
+    } else if (typeof body?.detail === "string") {
+      // Fallback for any endpoint still emitting FastAPI's default shape.
+      message = body.detail;
+    }
+  } catch {
+    // Non-JSON body; keep the statusText-based default message.
+  }
+
+  return new ApiError(message, res.status, code, requestId);
 }
 
 /**
@@ -128,7 +162,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new UnauthorizedError();
   }
   if (!res.ok) {
-    throw new ApiError(`API request failed: ${res.statusText}`, res.status);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<T>;
@@ -156,7 +190,7 @@ async function requestClient<T>(path: string, init?: RequestInit): Promise<T> {
     throw new UnauthorizedError();
   }
   if (!res.ok) {
-    throw new ApiError(`API request failed: ${res.statusText}`, res.status);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<T>;
@@ -191,6 +225,15 @@ export async function getContractClient(id: string): Promise<ContractDetail> {
  */
 export async function listClauses(id: string): Promise<ClauseListResponse> {
   return request<ClauseListResponse>(`/api/v1/contracts/${id}/clauses`);
+}
+
+/**
+ * Client-side equivalent of listClauses(). Use this from "use client"
+ * components where next/headers isn't available, e.g. to refetch clauses
+ * after an SSE "complete" event without a full page reload.
+ */
+export async function listClausesClient(id: string): Promise<ClauseListResponse> {
+  return requestClient<ClauseListResponse>(`/api/v1/contracts/${id}/clauses`);
 }
 
 export async function uploadContract(file: File): Promise<ContractUploadResponse> {

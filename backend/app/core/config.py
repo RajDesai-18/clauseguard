@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     llm_primary_model: str = "gpt-5.1"
     llm_fallback_model: str = "gemini/gemini-2.5-flash"
 
+    # Rate limiting (token bucket, per client IP)
+    rate_limit_enabled: bool = True
+    rate_limit_capacity: int = 60  # burst: max tokens in the bucket
+    rate_limit_refill_per_second: float = 1.0  # sustained: tokens added per second
+
+    # Analysis result cache (read-through, completed contracts only)
+    analysis_cache_ttl_seconds: int = 3600
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a list."""

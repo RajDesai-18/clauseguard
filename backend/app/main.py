@@ -9,7 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import dispose_engine
+from app.core.errors import register_exception_handlers
 from app.core.redis import close_redis
+from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 
 logging.basicConfig(
@@ -51,7 +53,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Middleware (order matters -- outermost first)
+    # Middleware. In Starlette the FIRST middleware added is the
+    # INNERMOST, so request flow is: CORS -> RequestID -> RateLimit -> app.
+    # RateLimit sits inside CORS (so a 429 carries CORS headers and the
+    # browser can read it) and after RequestID (so the 429 has a request
+    # ID in its body and x-request-id header).
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestIDMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -63,6 +70,10 @@ def create_app() -> FastAPI:
 
     # Routes
     app.include_router(api_router)
+
+    # Structured error envelope on every error response.
+    # Registered after routes; handlers apply app-wide regardless of order.
+    register_exception_handlers(app)
 
     return app
 

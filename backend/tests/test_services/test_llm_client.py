@@ -59,14 +59,14 @@ def test_call_llm_primary_exception_falls_back():
 
 
 def test_call_llm_both_fail_raises():
-    """If both primary and fallback fail, the error should propagate."""
+    """If both primary and fallback fail, LLMUnavailableError is raised."""
     with (
         patch.object(
             llm_module,
             "completion",
             side_effect=[Exception("primary down"), Exception("fallback down")],
         ),
-        pytest.raises(Exception, match="fallback down"),
+        pytest.raises(llm_module.LLMUnavailableError, match="unavailable"),
     ):
         call_llm([{"role": "user", "content": "hi"}])
 

@@ -9,10 +9,19 @@ from app.celery_app import celery_app
 from app.models.clause import Clause
 from app.models.contract import Contract
 from app.services.clause_splitter import split_clauses
+from app.services.llm_client import LLMUnavailableError
 from app.services.progress import publish_progress_sync
 from app.tasks._session import get_sync_session
 
 logger = logging.getLogger(__name__)
+
+# Shown to the user when the document was parsed but the LLM was
+# unreachable, so no clauses could be segmented or analysed.
+SPLIT_DEGRADED_REASON = (
+    "AI analysis is temporarily unavailable, so this contract was saved "
+    "without clause-by-clause review. The original document is intact; "
+    "re-upload it later to run a full analysis."
+)
 
 
 @celery_app.task(
@@ -32,6 +41,12 @@ def classify_clauses_task(self, parse_result: dict) -> dict:
     Reads contract.raw_text (set by parse_document_task), calls the
     LLM splitter, and persists one Clause row per detected clause
     with risk fields left null for the analyze step to fill in.
+
+    Graceful degradation: if the LLM is unreachable (both primary and
+    fallback down), the document cannot be segmented. Rather than fail,
+    the contract is marked ``complete`` with a ``degraded_reason`` and
+    the remaining saga chain is cleared so no analysis is attempted.
+    The parsed ``raw_text`` is preserved and the contract stays viewable.
 
     Args:
         parse_result: Dict from the previous task containing contract_id.
@@ -60,8 +75,13 @@ def classify_clauses_task(self, parse_result: dict) -> dict:
         contract.status = "analyzing"
         session.commit()
 
-        # Call LLM to split + classify
-        split_result = split_clauses(contract.raw_text)
+        # Call LLM to split + classify. This is the first LLM dependency
+        # in the pipeline; if it's down, we degrade rather than fail.
+        try:
+            split_result = split_clauses(contract.raw_text)
+        except LLMUnavailableError:
+            return _degrade_at_split(self, session, contract, contract_id)
+
         contract_type = split_result.get("contract_type", "other")
         summary = split_result.get("summary", "")
         raw_clauses = split_result.get("clauses", [])
@@ -131,3 +151,42 @@ def classify_clauses_task(self, parse_result: dict) -> dict:
         raise
     finally:
         session.close()
+
+
+def _degrade_at_split(task, session, contract: Contract, contract_id: str) -> dict:
+    """Mark a contract complete-but-degraded when the LLM is unavailable.
+
+    Clears the remaining saga chain so dispatch_analysis_task does not
+    run (there are no clauses to analyse), preserves the parsed text,
+    and records a user-facing reason. Emits a terminal ``complete``
+    progress event so the frontend stops the live tracker and renders
+    the degraded state.
+    """
+    logger.warning(
+        "LLM unavailable while splitting contract %s; completing in degraded mode",
+        contract_id,
+    )
+
+    # Clear the rest of the chain (dispatch_analysis_task) so nothing
+    # downstream runs. Without this, the chain would proceed and fail on
+    # the zero-clause guard.
+    task.request.chain = None
+
+    contract.status = "complete"
+    contract.degraded_reason = SPLIT_DEGRADED_REASON
+    contract.clause_count = 0
+    session.commit()
+
+    publish_progress_sync(
+        contract_id,  # type: ignore
+        status="complete",
+        detail="Saved without AI analysis (analysis service unavailable)",
+        current_step=5,
+    )
+
+    return {
+        "contract_id": contract_id,
+        "contract_type": None,
+        "clause_count": 0,
+        "degraded": True,
+    }

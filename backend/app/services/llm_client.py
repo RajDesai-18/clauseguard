@@ -14,6 +14,17 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class LLMUnavailableError(Exception):
+    """Raised when both primary and fallback LLM providers are unreachable.
+
+    Distinct from errors like malformed JSON or a bad prompt: this means
+    the LLM service itself could not be reached (primary circuit open and
+    fallback also failing), which is the precise condition that should
+    trigger graceful degradation rather than a hard pipeline failure.
+    """
+
+
 # Circuit breaker: opens after 5 consecutive failures, resets after 30s
 llm_circuit_breaker = pybreaker.CircuitBreaker(
     fail_max=5,
@@ -90,19 +101,29 @@ def call_llm(
         The assistant's response text.
 
     Raises:
-        Exception: If both primary and fallback fail.
+        LLMUnavailableError: If both primary and fallback are unreachable.
     """
     try:
         response = _call_primary(messages, **kwargs)
     except pybreaker.CircuitBreakerError:
-        response = _call_fallback(messages, **kwargs)
+        # Primary breaker is open. Try the fallback; if that also fails,
+        # the LLM is genuinely unavailable.
+        try:
+            response = _call_fallback(messages, **kwargs)
+        except Exception as fallback_exc:
+            logger.error("Primary circuit open and fallback failed: %s", fallback_exc)
+            raise LLMUnavailableError(
+                "Both primary and fallback LLM providers are unavailable."
+            ) from fallback_exc
     except Exception as exc:
         logger.error("Primary LLM failed: %s", exc)
         try:
             response = _call_fallback(messages, **kwargs)
         except Exception as fallback_exc:
             logger.error("Fallback LLM also failed: %s", fallback_exc)
-            raise fallback_exc from exc
+            raise LLMUnavailableError(
+                "Both primary and fallback LLM providers are unavailable."
+            ) from fallback_exc
 
     return response.choices[0].message.content  # type: ignore
 
@@ -125,7 +146,7 @@ def call_llm_json(
 
     Raises:
         json.JSONDecodeError: If the response isn't valid JSON.
-        Exception: If both primary and fallback fail.
+        LLMUnavailableError: If both primary and fallback are unreachable.
     """
     kwargs["response_format"] = {"type": "json_object"}
     raw = call_llm(messages, **kwargs)

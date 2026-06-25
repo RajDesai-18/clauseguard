@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppRail } from "@/components/shell/rail";
 import { AppTopBar } from "@/components/shell/top-bar";
@@ -28,6 +28,10 @@ export const metadata: Metadata = {
  * rendered when a session exists, so every route under (app) is
  * implicitly protected without per-page checks.
  *
+ * The rail's collapsed state is read from the rail_collapsed cookie and
+ * passed down, so the server-rendered rail paints at the correct width
+ * on first load with no client-side correction flicker.
+ *
  * Note: top-bar reads the session independently for the avatar dropdown.
  * Better Auth caches the lookup within a request, so the second read is
  * effectively free; not worth coupling layout and top-bar via props.
@@ -50,9 +54,12 @@ export default async function AppLayout({
     redirect("/login?callbackUrl=/dashboard");
   }
 
+  const cookieStore = await cookies();
+  const railCollapsed = cookieStore.get("rail_collapsed")?.value === "1";
+
   return (
     <div className="flex min-h-screen">
-      <AppRail />
+      <AppRail defaultCollapsed={railCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <AppTopBar />
         <main className="flex-1 px-6 pt-8 pb-20 md:px-10 md:pt-10 md:pb-16">
