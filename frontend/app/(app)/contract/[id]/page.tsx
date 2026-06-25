@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ContractDetailView } from "@/components/features/contract-detail-view";
+import { ErrorState } from "@/components/system/error-state";
 import {
   ApiError,
   getContract,
@@ -25,23 +26,25 @@ export default async function ContractPage({ params }: PageProps) {
     if (err instanceof ApiError && err.status === 404) {
       notFound();
     }
+
+    const message =
+      err instanceof ApiError ? err.message : "Something went wrong reaching the analysis server.";
+    const requestId = err instanceof ApiError ? err.requestId : undefined;
+
     return (
-      <div className="border-destructive/40 bg-destructive/5 rounded-sm border px-4 py-6">
-        <p className="text-caption text-destructive mb-2 font-mono uppercase">
-          Couldn&rsquo;t load contract
-        </p>
-        <p className="text-body-sm text-foreground">
-          {err instanceof ApiError
-            ? `Backend returned ${err.status}.`
-            : "Something went wrong reaching the analysis server."}
-        </p>
-        <Link
-          href="/dashboard"
-          className="text-body-sm text-foreground mt-4 inline-block underline underline-offset-4"
-        >
-          Back to dashboard
-        </Link>
-      </div>
+      <ErrorState
+        title="Couldn't load contract"
+        message={message}
+        requestId={requestId}
+        action={
+          <Link
+            href="/dashboard"
+            className="text-body-sm text-foreground inline-block underline underline-offset-4"
+          >
+            Back to dashboard
+          </Link>
+        }
+      />
     );
   }
 

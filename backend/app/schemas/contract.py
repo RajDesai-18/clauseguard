@@ -26,6 +26,9 @@ class ContractSummary(BaseModel):
     status: str
     overall_risk: str | None = None
     clause_count: int = 0
+    # Set when the contract completed WITHOUT full AI analysis because the
+    # LLM was unavailable. None means a normal, fully-analysed contract.
+    degraded_reason: str | None = None
     created_at: datetime
     analyzed_at: datetime | None = None
 

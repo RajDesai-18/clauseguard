@@ -22,6 +22,11 @@ from app.schemas.contract import (
     ContractSummary,
     ContractUploadResponse,
 )
+from app.services.result_cache import (
+    get_cached_clauses,
+    invalidate_contract_cache,
+    set_cached_clauses,
+)
 from app.services.review_exporter import build_review_docx
 
 logger = logging.getLogger(__name__)
@@ -50,8 +55,17 @@ async def upload_contract(
     uploads to MinIO, creates a DB record scoped to the current user,
     and dispatches the Celery pipeline.
 
-    Duplicate detection is per-user: the same file uploaded by two
-    different users produces two contracts.
+    Idempotency is per-user and keyed on file content (SHA-256):
+
+    - An in-flight or completed duplicate is returned as-is, so the
+      caller attaches to the existing job or result instead of spawning
+      a second pipeline for identical bytes.
+    - A previously *failed* duplicate is purged and re-processed, so the
+      same file isn't permanently stuck on a dead record. Reuploading is
+      the natural retry gesture; we honour it.
+
+    The same file uploaded by two different users produces two
+    contracts; analyses are never shared across the user boundary.
     """
     # Validate content type
     if file.content_type not in ALLOWED_TYPES:
@@ -79,7 +93,7 @@ async def upload_contract(
     # Compute content hash for idempotency
     file_hash = hashlib.sha256(content).hexdigest()
 
-    # Check for duplicate upload SCOPED to this user. The same file
+    # Check for a duplicate upload SCOPED to this user. The same file
     # uploaded by another user is a different contract; we don't share
     # analyses across users.
     existing = await db.execute(
@@ -92,12 +106,45 @@ async def upload_contract(
     )
     duplicate = existing.scalar_one_or_none()
     if duplicate is not None:
-        return ContractUploadResponse(
-            id=duplicate.id,
-            file_name=duplicate.file_name,
-            status=duplicate.status,
-            message="Duplicate file detected. Returning existing analysis.",
+        if duplicate.status != "failed":
+            # In-flight or complete: attach to the existing contract
+            # rather than reprocessing identical bytes.
+            logger.info(
+                "Duplicate upload for hash %s returned existing contract %s (status=%s, user=%s)",
+                file_hash[:12],
+                duplicate.id,
+                duplicate.status,
+                current_user.id,
+            )
+            return ContractUploadResponse(
+                id=duplicate.id,
+                file_name=duplicate.file_name,
+                status=duplicate.status,
+                message="Duplicate file detected. Returning existing analysis.",
+            )
+
+        # A prior attempt failed. Purge the dead record and its file so
+        # this upload becomes a clean retry instead of returning a
+        # contract the user can never move forward.
+        logger.info(
+            "Re-uploading previously failed contract %s for hash %s; "
+            "purging dead record (user=%s)",
+            duplicate.id,
+            file_hash[:12],
+            current_user.id,
         )
+        try:
+            delete_file(duplicate.file_url)
+        except Exception:
+            # Best-effort cleanup. A leftover object is undesirable but
+            # not fatal; don't block the retry on storage cleanup.
+            logger.warning(
+                "Failed to delete MinIO object %s for failed contract %s; continuing with retry",
+                duplicate.file_url,
+                duplicate.id,
+            )
+        await db.delete(duplicate)
+        await db.commit()
 
     # Upload to MinIO
     contract_id = uuid.uuid4()
@@ -215,10 +262,20 @@ async def get_contract_clauses(
     contract_id: uuid.UUID,
     db: DBSession,
     current_user: CurrentUser,
-) -> ClauseListResponse:
+) -> Response:
     """Get clauses for a contract owned by the current user.
 
     Returns 404 if the contract doesn't exist or belongs to another user.
+
+    For contracts in terminal ``complete`` status the assembled response
+    is served through a read-through Redis cache. The analysis is
+    immutable once complete, so a cached payload cannot go stale within
+    its TTL. Ownership is always verified against PostgreSQL first, so
+    the cache never short-circuits the access-control check. In-flight
+    contracts bypass the cache, since their clause set is still changing.
+
+    Returns a raw ``Response`` rather than the model so a cache hit skips
+    re-serialisation; ``response_model`` is retained for the OpenAPI schema.
     """
     contract_result = await db.execute(
         select(Contract).where(
@@ -235,19 +292,35 @@ async def get_contract_clauses(
             detail="Contract not found.",
         )
 
-    # Fetch clauses ordered by position
+    cache_id = str(contract_id)
+    is_cacheable = contract.status == "complete"
+
+    # Read-through: serve a cached payload if one exists.
+    if is_cacheable:
+        cached = await get_cached_clauses(cache_id)
+        if cached is not None:
+            return Response(content=cached, media_type="application/json")
+
+    # Cache miss, or a non-terminal status: assemble from the database.
     clauses_result = await db.execute(
         select(Clause).where(Clause.contract_id == contract_id).order_by(Clause.position)
     )
     clauses = clauses_result.scalars().all()
 
-    return ClauseListResponse(
+    response_model = ClauseListResponse(
         contract_id=str(contract.id),
         contract_type=contract.contract_type,
         overall_risk=contract.overall_risk,
         clause_count=len(clauses),
         clauses=[ClauseResponse.model_validate(c) for c in clauses],
     )
+    payload = response_model.model_dump_json()
+
+    # Populate the cache only for immutable, completed analyses.
+    if is_cacheable:
+        await set_cached_clauses(cache_id, payload)
+
+    return Response(content=payload, media_type="application/json")
 
 
 @router.get("/{contract_id}/export")
@@ -384,6 +457,11 @@ async def delete_contract(
 
     await db.delete(contract)
     await db.commit()
+
+    # Free the cached analysis promptly. Even without this the ownership
+    # check above would 404 a deleted contract before reaching the cache,
+    # but purging now reclaims Redis memory instead of waiting on the TTL.
+    await invalidate_contract_cache(str(contract_id))
 
     logger.info(
         "Contract %s deleted (user=%s, file=%s)",

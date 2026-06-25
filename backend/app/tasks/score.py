@@ -11,11 +11,20 @@ from app.models.clause import Clause
 from app.models.contract import Contract
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.clause_analyzer import analyze_clause
+from app.services.llm_client import LLMUnavailableError
 from app.services.progress import publish_progress_sync
 from app.services.semantic_cache import find_similar_clause
 from app.tasks._session import get_sync_session
 
 logger = logging.getLogger(__name__)
+
+# Shown to the user when clauses were detected but the LLM was
+# unreachable for every one of them, so no real risk analysis ran.
+ANALYSIS_DEGRADED_REASON = (
+    "AI risk analysis is temporarily unavailable, so clauses were detected "
+    "but not individually reviewed. Re-run the analysis later for a full "
+    "clause-by-clause assessment."
+)
 
 
 @celery_app.task(
@@ -38,6 +47,13 @@ def analyze_one_clause_task(self, clause_id: str) -> dict:
         3. LLM via analyze_clause (which itself queries template_matcher)
 
     Persists the analysis fields back to the Clause row.
+
+    Graceful degradation: a genuine LLM outage (LLMUnavailableError)
+    records a fallback analysis AND marks the clause via metadata so the
+    chord callback (score_contract_task) can detect a total outage and
+    flag the whole contract as degraded. A one-off analysis error (bad
+    JSON, etc.) records an untracked fallback and does not flag the
+    contract.
 
     Args:
         clause_id: UUID of the clause to analyze.
@@ -80,6 +96,27 @@ def analyze_one_clause_task(self, clause_id: str) -> dict:
                 analysis = analyze_clause(clause_text, clause_type, contract_type)
                 cache_source = "llm"
                 set_cached_analysis(clause_text, contract_type, analysis)
+            except LLMUnavailableError:
+                # LLM genuinely unreachable. Record a fallback and mark
+                # the clause so score_contract_task can detect a
+                # widespread outage and flag the contract as degraded.
+                logger.warning(
+                    "LLM unavailable for clause %s (%s); recording degraded fallback",
+                    clause_id,
+                    clause_type,
+                )
+                analysis = {
+                    "risk_level": "yellow",
+                    "confidence": 0.0,
+                    "explanation": (
+                        "AI analysis was unavailable for this clause. Manual review recommended."
+                    ),
+                    "market_comparison": "Unavailable: analysis service was down.",
+                }
+                clause.metadata_ = {"analysis_failed": True}
+                cache_source = "degraded"
+                # Do NOT cache a degraded result; we want a real analysis
+                # on retry once the LLM is back.
             except Exception:
                 logger.exception(
                     "LLM analysis failed for clause %s (%s); using fallback",
@@ -150,6 +187,12 @@ def score_contract_task(self, _clause_results: list, contract_id: str) -> dict:
     per-clause analysis results from the group, but we don't use it
     directly; we re-read from the DB so we have authoritative state.
 
+    Graceful degradation: if EVERY clause carries the analysis_failed
+    marker, the LLM was down for the whole analysis pass. The contract
+    still completes (clauses are viewable with manual-review fallbacks)
+    but is flagged with a degraded_reason. A partial failure is treated
+    as normal transient noise and does not flag the contract.
+
     Args:
         _clause_results: List of dicts from analyze_one_clause_task (unused).
         contract_id: UUID of the contract to score.
@@ -182,6 +225,23 @@ def score_contract_task(self, _clause_results: list, contract_id: str) -> dict:
         overall_risk = _compute_overall_risk(risk_levels)
         contract.overall_risk = overall_risk
         contract.analyzed_at = datetime.now(UTC)
+
+        # Detect a total LLM outage: every clause failed analysis. This is
+        # distinct from a few flaky clauses (normal noise). Only a complete
+        # wipeout flags the contract as degraded.
+        failed_count = sum(
+            1
+            for c in clauses
+            if isinstance(c.metadata_, dict) and c.metadata_.get("analysis_failed")
+        )
+        if failed_count == len(clauses):
+            logger.warning(
+                "All %d clauses failed analysis for contract %s; flagging degraded",
+                len(clauses),
+                contract_id,
+            )
+            contract.degraded_reason = ANALYSIS_DEGRADED_REASON
+
         session.commit()
 
         publish_progress_sync(
@@ -194,10 +254,11 @@ def score_contract_task(self, _clause_results: list, contract_id: str) -> dict:
         )
 
         logger.info(
-            "Scored contract %s: %d clauses, overall risk=%s",
+            "Scored contract %s: %d clauses, overall risk=%s, failed=%d",
             contract_id,
             len(clauses),
             overall_risk,
+            failed_count,
         )
 
         return {

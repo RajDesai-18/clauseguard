@@ -33,6 +33,10 @@ class Contract(Base, UUIDMixin, TimestampMixin):
     status: Mapped[str] = mapped_column(String(50), default="queued", nullable=False, index=True)
     overall_risk: Mapped[str | None] = mapped_column(String(20))
     summary: Mapped[str | None] = mapped_column(Text)
+    # Set when the pipeline finishes WITHOUT full AI analysis because the
+    # LLM was unavailable. NULL means a normal, fully-analysed contract.
+    # Holds a short human-readable reason shown to the user in a banner.
+    degraded_reason: Mapped[str | None] = mapped_column(String(500))
     raw_text: Mapped[str | None] = mapped_column(Text)
     clause_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

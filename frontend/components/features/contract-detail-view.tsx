@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RiskPill } from "@/components/ui/risk-pill";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -9,9 +9,16 @@ import { ClauseList } from "@/components/contract/clause-list";
 import type { ContractStatus } from "@/components/ui/status-badge";
 import type { StreamStatus } from "@/lib/hooks/use-contract-stream";
 import { ProgressTracker } from "@/components/features/progress-tracker";
-import { getContractClient, type ClauseDetail } from "@/lib/api/api-client";
+import { getContractClient, listClausesClient, type ClauseDetail } from "@/lib/api/api-client";
 
 const PROCESSING_STATUSES: ContractStatus[] = ["queued", "parsing", "analyzing", "scoring"];
+
+// How many times to re-poll clauses when a contract completes but the
+// finalize step hasn't flushed clause rows yet, and how long to wait
+// between attempts. Bounded so a genuinely clause-less contract (e.g. a
+// degraded one) doesn't poll forever.
+const CLAUSE_REFETCH_ATTEMPTS = 4;
+const CLAUSE_REFETCH_DELAY_MS = 800;
 
 interface Contract {
   id: string;
@@ -23,6 +30,7 @@ interface Contract {
   created_at: string;
   analyzed_at: string | null;
   summary: string | null;
+  degraded_reason: string | null;
 }
 
 interface Props {
@@ -30,11 +38,15 @@ interface Props {
   clauses: ClauseDetail[];
 }
 
-export function ContractDetailView({ contract: initialContract, clauses }: Props) {
+export function ContractDetailView({ contract: initialContract, clauses: initialClauses }: Props) {
   const [status, setStatus] = useState<ContractStatus>(initialContract.status as ContractStatus);
   const [contract, setContract] = useState(initialContract);
+  const [clauses, setClauses] = useState(initialClauses);
   const isProcessing = PROCESSING_STATUSES.includes(status);
 
+  // When the contract reaches a terminal status (typically via SSE while
+  // the user watches), refetch the contract record so summary/risk/
+  // degraded_reason reflect the final state.
   useEffect(() => {
     if (isProcessing) return;
     if (status === contract.status) return;
@@ -53,6 +65,49 @@ export function ContractDetailView({ contract: initialContract, clauses }: Props
       cancelled = true;
     };
   }, [isProcessing, status, contract.status, initialContract.id]);
+
+  // Refetch clauses when the contract completes with none loaded.
+  //
+  // On a fresh upload the page first renders mid-pipeline with zero
+  // clauses. When SSE flips status to "complete", the server-fetched
+  // clause prop is stale (empty). We refetch client-side, with a short
+  // bounded retry to cover the brief window where finalize hasn't
+  // flushed clause rows yet. Degraded and failed contracts are skipped:
+  // zero clauses is their correct terminal state, so polling is wasted.
+  useEffect(() => {
+    if (status !== "complete") return;
+    if (clauses.length > 0) return;
+    if (contract.degraded_reason !== null) return;
+
+    let cancelled = false;
+
+    const poll = async (attempt: number): Promise<void> => {
+      try {
+        const res = await listClausesClient(initialContract.id);
+        if (cancelled) return;
+
+        if (res.clauses.length > 0) {
+          setClauses(res.clauses);
+          return;
+        }
+      } catch {
+        // Treat a fetch error like an empty result: fall through to retry
+        // or give up. The page stays usable either way.
+      }
+
+      if (!cancelled && attempt < CLAUSE_REFETCH_ATTEMPTS) {
+        setTimeout(() => {
+          if (!cancelled) void poll(attempt + 1);
+        }, CLAUSE_REFETCH_DELAY_MS);
+      }
+    };
+
+    void poll(1);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, clauses.length, contract.degraded_reason, initialContract.id]);
 
   const handleStreamStatusChange = (next: StreamStatus) => {
     if (
@@ -132,15 +187,26 @@ function CompletionView({ contract, clauses }: { contract: Contract; clauses: Cl
     );
   }
 
+  const isDegraded = contract.degraded_reason !== null;
+
+  // Tier 1 degradation: the document was parsed but never split into
+  // clauses (LLM was down at split time), so there is nothing to list.
+  // Show the banner alone rather than an empty clause section.
+  const hasClauses = clauses.length > 0;
+
   return (
     <div className="space-y-12">
+      {isDegraded && <DegradedBanner reason={contract.degraded_reason as string} />}
+
       <section className="border-border/40 bg-card space-y-6 rounded-sm border p-6">
         <div>
           <p className="text-body-sm text-muted-foreground mb-2 font-mono uppercase">
-            Analysis complete
+            {isDegraded ? "Document saved" : "Analysis complete"}
           </p>
           <h3 className="text-heading-md font-display text-foreground font-medium">
-            {contract.clause_count} clauses analyzed
+            {hasClauses
+              ? `${contract.clause_count} clauses analyzed`
+              : "Document parsed without analysis"}
           </h3>
         </div>
 
@@ -152,7 +218,30 @@ function CompletionView({ contract, clauses }: { contract: Contract; clauses: Cl
         )}
       </section>
 
-      <ClauseList clauses={clauses} />
+      {hasClauses && <ClauseList clauses={clauses} />}
+    </div>
+  );
+}
+
+function DegradedBanner({ reason }: { reason: string }) {
+  return (
+    <div
+      role="status"
+      className="border-risk-medium/40 bg-risk-medium/5 rounded-sm border px-6 py-5"
+    >
+      <div className="flex items-start gap-3">
+        <TriangleAlert
+          className="text-risk-medium mt-0.5 size-4 shrink-0"
+          strokeWidth={1.5}
+          aria-hidden
+        />
+        <div className="space-y-1.5">
+          <p className="text-caption text-risk-medium font-mono uppercase">
+            AI analysis unavailable
+          </p>
+          <p className="text-body text-foreground/90 leading-relaxed">{reason}</p>
+        </div>
+      </div>
     </div>
   );
 }

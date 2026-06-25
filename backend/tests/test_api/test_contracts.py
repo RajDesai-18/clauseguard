@@ -48,7 +48,9 @@ async def test_upload_rejects_unsupported_type(authenticated_client: AsyncClient
         files={"file": ("test.txt", b"hello world", "text/plain")},
     )
     assert response.status_code == 415
-    assert "Unsupported file type" in response.json()["detail"]
+    body = response.json()
+    assert body["error"]["code"] == "unsupported_media_type"
+    assert "Unsupported file type" in body["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -59,7 +61,9 @@ async def test_upload_rejects_empty_file(authenticated_client: AsyncClient) -> N
         files={"file": ("empty.pdf", b"", "application/pdf")},
     )
     assert response.status_code == 400
-    assert "empty" in response.json()["detail"].lower()
+    body = response.json()
+    assert body["error"]["code"] == "bad_request"
+    assert "empty" in body["error"]["message"].lower()
 
 
 @pytest.mark.db
