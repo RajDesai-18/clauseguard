@@ -151,3 +151,44 @@ def test_call_llm_passes_kwargs_to_completion():
     kwargs = mock_completion.call_args.kwargs
     assert kwargs["temperature"] == 0.2
     assert kwargs["max_tokens"] == 500
+
+
+def test_call_llm_repairs_mojibake_in_text():
+    """call_llm should repair mojibake in the returned assistant text."""
+    broken = "party" + "\u00e2\u20ac\u2122" + "s liability"  # partyâ€™s liability
+    mock_response = _make_completion_response(broken)
+
+    with patch.object(llm_module, "completion", return_value=mock_response):
+        result = call_llm([{"role": "user", "content": "hi"}])
+
+    assert result == "party's liability"
+
+
+def test_call_llm_json_repairs_mojibake_in_values():
+    """call_llm_json should repair mojibake in parsed string values."""
+    # Mojibake for a non-breaking hyphen: "a 12â€‘month cap".
+    payload = {"explanation": "a 12" + "\u00e2\u20ac\u2018" + "month cap", "risk_level": "yellow"}
+    mock_response = _make_completion_response(json.dumps(payload))
+
+    with patch.object(llm_module, "completion", return_value=mock_response):
+        result = call_llm_json([{"role": "user", "content": "hi"}])
+
+    assert "\u00e2\u20ac" not in result["explanation"]
+    assert result["explanation"] == "a 12\u2011month cap"
+    assert result["risk_level"] == "yellow"
+
+
+def test_call_llm_json_handles_literal_curly_quotes_in_values():
+    """Literal curly quotes inside a JSON value must not break parsing.
+
+    Guards the parse-before-clean ordering: cleaning the raw JSON string
+    first would straighten the curly quotes into unescaped double quotes and
+    break json.loads.
+    """
+    raw = '{"explanation": "the \u201cAS IS\u201d clause"}'
+    mock_response = _make_completion_response(raw)
+
+    with patch.object(llm_module, "completion", return_value=mock_response):
+        result = call_llm_json([{"role": "user", "content": "hi"}])
+
+    assert result["explanation"] == 'the "AS IS" clause'

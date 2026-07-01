@@ -11,6 +11,7 @@ import pybreaker
 from litellm import completion
 
 from app.core.config import settings
+from app.services.text_cleaning import fix_mojibake
 
 logger = logging.getLogger(__name__)
 
@@ -83,22 +84,16 @@ def _call_fallback(
     return _call_llm(settings.llm_fallback_model, messages, **kwargs)
 
 
-def call_llm(
+def _complete(
     messages: list[dict[str, str]],
     **kwargs: Any,
 ) -> str:
-    """Call LLM with automatic circuit breaker and fallback.
+    """Run a completion with circuit-breaker fallback, returning raw content.
 
-    Tries the primary model first. If the circuit breaker is open
-    (5 consecutive failures), automatically routes to the fallback
-    model. Returns the assistant's message content as a string.
-
-    Args:
-        messages: Chat messages in OpenAI format.
-        **kwargs: Additional params (temperature, response_format, etc.).
-
-    Returns:
-        The assistant's response text.
+    Tries the primary model; on failure or an open circuit, routes to the
+    fallback. Returns the assistant's message content exactly as produced by
+    the model, without post-processing. Callers apply mojibake repair in the
+    way appropriate to their output shape (raw text vs. parsed JSON).
 
     Raises:
         LLMUnavailableError: If both primary and fallback are unreachable.
@@ -128,26 +123,72 @@ def call_llm(
     return response.choices[0].message.content  # type: ignore
 
 
+def _fix_mojibake_deep(value: Any) -> Any:
+    """Recursively repair mojibake in every string within a parsed structure.
+
+    Applied to parsed JSON (dicts, lists, scalars) *after* ``json.loads`` so
+    repairing text can never corrupt JSON syntax. ftfy straightens curly
+    quotes, and straightening a curly quote inside a raw JSON string would
+    turn it into an unescaped ``"`` and break parsing, so cleaning must happen
+    post-parse. Non-string scalars pass through untouched.
+    """
+    if isinstance(value, str):
+        return fix_mojibake(value)
+    if isinstance(value, dict):
+        return {key: _fix_mojibake_deep(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_fix_mojibake_deep(item) for item in value]
+    return value
+
+
+def call_llm(
+    messages: list[dict[str, str]],
+    **kwargs: Any,
+) -> str:
+    """Call the LLM and return the assistant's text, mojibake-repaired.
+
+    Tries the primary model first, automatically routing to the fallback if
+    the circuit breaker is open. The returned text is passed through
+    ``fix_mojibake`` so encoding damage the model may emit (for example a
+    curly apostrophe surfacing as ``â€™``) never reaches the database.
+
+    Args:
+        messages: Chat messages in OpenAI format.
+        **kwargs: Additional params (temperature, response_format, etc.).
+
+    Returns:
+        The assistant's response text, cleaned.
+
+    Raises:
+        LLMUnavailableError: If both primary and fallback are unreachable.
+    """
+    content = _complete(messages, **kwargs)
+    return fix_mojibake(content) if content else content
+
+
 def call_llm_json(
     messages: list[dict[str, str]],
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Call LLM and parse the response as JSON.
+    """Call the LLM and parse the response as JSON, mojibake-repaired.
 
-    Adds response_format={"type": "json_object"} to force
-    structured JSON output from the model.
+    Adds ``response_format={"type": "json_object"}`` to force structured
+    output. The raw response is parsed first, then every string value is
+    repaired via ``fix_mojibake``. Cleaning happens *after* parsing so it can
+    never corrupt the JSON syntax itself.
 
     Args:
         messages: Chat messages in OpenAI format.
         **kwargs: Additional params (temperature, etc.).
 
     Returns:
-        Parsed JSON dict from the assistant's response.
+        Parsed JSON dict with all string values mojibake-repaired.
 
     Raises:
         json.JSONDecodeError: If the response isn't valid JSON.
         LLMUnavailableError: If both primary and fallback are unreachable.
     """
     kwargs["response_format"] = {"type": "json_object"}
-    raw = call_llm(messages, **kwargs)
-    return json.loads(raw)
+    raw = _complete(messages, **kwargs)
+    parsed = json.loads(raw)
+    return _fix_mojibake_deep(parsed)

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
 import { BondPaper } from "@/components/bond-paper";
 import "./globals.css";
 
@@ -47,10 +48,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="bg-background text-foreground relative min-h-screen antialiased">
-        <div className="pointer-events-none fixed inset-0 z-0">
-          <BondPaper />
-        </div>
-        <div className="relative z-10">{children}</div>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <div className="pointer-events-none fixed inset-0 z-0">
+            <BondPaper />
+          </div>
+          <div className="relative z-10">{children}</div>
+        </ThemeProvider>
       </body>
     </html>
   );

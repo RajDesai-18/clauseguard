@@ -31,3 +31,7 @@ export const authClient = createAuthClient({
 // Lets components do `import { useSession } from "@/lib/auth-client"`
 // instead of destructuring every time.
 export const { signIn, signUp, signOut, useSession } = authClient;
+
+if (typeof window !== "undefined") {
+  (window as unknown as { authClient: typeof authClient }).authClient = authClient;
+}

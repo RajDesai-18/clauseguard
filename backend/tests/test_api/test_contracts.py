@@ -86,3 +86,23 @@ async def test_get_contract_not_found(authenticated_client: AsyncClient) -> None
     fake_id = "00000000-0000-0000-0000-000000000000"
     response = await authenticated_client.get(f"/api/v1/contracts/{fake_id}")
     assert response.status_code == 404
+
+
+# --- Re-analyze -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_requires_authentication(client: AsyncClient) -> None:
+    """POST /contracts/{id}/reanalyze returns 401 without a session."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await client.post(f"/api/v1/contracts/{fake_id}/reanalyze")
+    assert response.status_code == 401
+
+
+@pytest.mark.db
+@pytest.mark.asyncio
+async def test_reanalyze_not_found(authenticated_client: AsyncClient) -> None:
+    """Re-analysing a non-existent contract should return 404."""
+    fake_id = "00000000-0000-0000-0000-000000000000"
+    response = await authenticated_client.post(f"/api/v1/contracts/{fake_id}/reanalyze")
+    assert response.status_code == 404

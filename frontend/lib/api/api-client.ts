@@ -66,6 +66,31 @@ export interface ClauseListResponse {
   clauses: ClauseDetail[];
 }
 
+export interface SearchHit {
+  clause_id: string;
+  clause_type: string;
+  risk_level: ClauseRiskLevel;
+  original_text: string;
+  explanation: string;
+  position: number;
+  similarity: number;
+}
+
+export interface SearchContractGroup {
+  contract_id: string;
+  file_name: string;
+  contract_type: string | null;
+  overall_risk: RiskLevel | null;
+  top_similarity: number;
+  hits: SearchHit[];
+}
+
+export interface SearchResponse {
+  query: string;
+  total_hits: number;
+  groups: SearchContractGroup[];
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -290,4 +315,15 @@ export async function deleteContract(id: string): Promise<void> {
     throw new ApiError(detail ?? response.statusText, response.status);
   }
   // 204 No Content — no body to parse.
+}
+
+/**
+ * Cross-contract semantic clause search. Client-side: the search page is
+ * interactive (query box, live results), so it uses the browser cookie jar
+ * via requestClient rather than next/headers.
+ */
+export async function searchClausesClient(query: string, limit?: number): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q: query });
+  if (limit) params.set("limit", String(limit));
+  return requestClient<SearchResponse>(`/api/v1/search?${params.toString()}`);
 }

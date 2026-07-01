@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # Analysis result cache (read-through, completed contracts only)
     analysis_cache_ttl_seconds: int = 3600
 
+    # Semantic clause search relevance thresholds
+    search_min_similarity: float = (
+        0.25  # absolute floor: rejects noise below the model's random-pair baseline
+    )
+    search_relative_floor: float = 0.7  # keep hits within this fraction of the query's top score
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Parse comma-separated CORS origins into a list."""
