@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import {
   LayoutDashboard,
   Upload,
@@ -13,33 +12,26 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { LogoMark } from "@/components/ui/logo";
+import { useRail } from "@/components/shell/rail-context";
 
 /**
  * Left navigation rail for the authenticated app shell.
  *
  * Tablet+ (md): collapsible. Expanded (224px) shows icon + full label in
  * a left-aligned row; collapsed (72px) shows centered icons only. The
- * collapsed state persists in the `rail_collapsed` cookie, which the
- * server layout reads so first paint matches (no width flicker). The
- * width animates with the house ease curve, the one place a resize
- * genuinely reads better animated than snapped.
+ * collapsed state lives in RailContext (seeded from the `rail_collapsed`
+ * cookie by the server layout, so first paint matches with no width
+ * flicker) and is shared with global keyboard shortcuts. The width
+ * animates with the house ease curve, the one place a resize genuinely
+ * reads better animated than snapped.
  *
  * Mobile: a fixed bottom bar, unaffected by collapse.
  *
  * Active state: a foreground vertical rule bleeds to the rail's right
  * edge, like a magazine bookmark tab. No pulse, no scale, no translate.
  */
-export function AppRail({ defaultCollapsed = false }: { defaultCollapsed?: boolean }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
-
-  const toggle = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    // Persist as a plain UI preference. Not sensitive, so document.cookie
-    // is fine; the server layout reads it for flicker-free first paint.
-    // 1 year, lax, site-wide.
-    document.cookie = `rail_collapsed=${next ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
-  };
+export function AppRail() {
+  const { collapsed, toggle } = useRail();
 
   return (
     <>

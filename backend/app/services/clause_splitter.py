@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.services.llm_client import call_llm_json
@@ -29,6 +30,10 @@ Rules:
 - Extract EVERY substantive clause. Do not skip any.
 - Use lowercase_snake_case for clause_type values.
 - Keep original_text as the exact wording from the document. Do not paraphrase.
+- Do NOT output a clause whose original_text is only a section heading or title
+  (for example "16. Term and Termination"). Merge each section heading into the
+  substantive clause body beneath it; every clause must contain actual
+  contractual language, not just a heading.
 - Position starts at 1 and increments sequentially.
 - contract_type must be one of: nda, msa, sow, freelance, lease, other.
 - The summary should be understandable by someone with no legal background.
@@ -45,18 +50,82 @@ Valid clause_type values include (but are not limited to):
 - entry_and_access, insurance_requirements, default_and_remedies, utilities
 - entire_agreement, notices, amendments, representations_and_warranties"""
 
+# A bare heading is a leading section number followed by a short phrase with no
+# sentence punctuation. A substantive clause contains at least one period.
+_SECTION_NUM_RE = re.compile(r"^\s*\d+(?:\.\d+)*\.?(?:\s+|$)")
+_MAX_HEADING_LEN = 60
+
+
+def _is_bare_heading(original_text: str) -> bool:
+    """Return True if the text is only a numbered section heading with no body.
+
+    The LLM splitter occasionally emits a top-level section heading (for
+    example "16. Term and Termination") as its own clause when the section's
+    body lives entirely in numbered subsections. Such a clause carries no
+    contractual content and pollutes both analysis and search.
+
+    A bare heading is a leading section number followed by a short phrase (at
+    most ``_MAX_HEADING_LEN`` characters) containing no sentence-ending period,
+    since any substantive clause contains at least one.
+
+    Args:
+        original_text: The clause text emitted by the splitter.
+
+    Returns:
+        True if the text is only a section heading, False otherwise.
+    """
+    stripped = (original_text or "").strip()
+    if not stripped:
+        return False
+
+    match = _SECTION_NUM_RE.match(stripped)
+    if not match:
+        return False
+
+    body = stripped[match.end() :].strip()
+    if not body:
+        return True
+
+    core = body[:-1].rstrip() if body.endswith(".") else body
+    return len(core) <= _MAX_HEADING_LEN and "." not in core
+
+
+def _drop_bare_headings(clauses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove clauses that are only numbered section headings.
+
+    Args:
+        clauses: The raw clause dicts from the splitter.
+
+    Returns:
+        The clauses with bare headings removed. Positions are left as-is; the
+        caller renumbers.
+    """
+    kept: list[dict[str, Any]] = []
+    for clause in clauses:
+        text = clause.get("original_text", "")
+        if _is_bare_heading(text):
+            logger.info("Dropping bare-heading clause: %r", text[:80])
+            continue
+        kept.append(clause)
+    return kept
+
 
 def split_clauses(raw_text: str) -> dict[str, Any]:
     """Split contract text into classified clauses via LLM.
+
+    Bare section headings emitted by the splitter (clauses whose text is only a
+    numbered heading with no body) are dropped, and the remaining clauses are
+    renumbered contiguously so ``position`` has no gaps.
 
     Args:
         raw_text: Full extracted text from the contract document.
 
     Returns:
-        Dict with contract_type, summary, and list of clauses.
+        Dict with contract_type, summary, and the filtered list of clauses.
 
     Raises:
-        Exception: If LLM call fails or returns invalid JSON.
+        ValueError: If raw_text is empty.
+        Exception: If the LLM call fails or returns invalid JSON.
     """
     if not raw_text or not raw_text.strip():
         raise ValueError("Cannot split clauses from empty text")
@@ -78,10 +147,20 @@ def split_clauses(raw_text: str) -> dict[str, Any]:
 
     result = call_llm_json(messages, temperature=0.0)
 
-    clause_count = len(result.get("clauses", []))
+    raw_clauses = result.get("clauses", [])
+    kept = _drop_bare_headings(raw_clauses)
+
+    # Renumber positions contiguously after any drops so downstream ordering
+    # has no gaps.
+    for new_position, clause in enumerate(kept, 1):
+        clause["position"] = new_position
+    result["clauses"] = kept
+
+    dropped = len(raw_clauses) - len(kept)
     logger.info(
-        "Split contract into %d clauses, type: %s",
-        clause_count,
+        "Split contract into %d clauses (dropped %d bare heading(s)), type: %s",
+        len(kept),
+        dropped,
         result.get("contract_type", "unknown"),
     )
 

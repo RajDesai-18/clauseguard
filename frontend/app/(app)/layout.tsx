@@ -1,9 +1,11 @@
+import { auth } from "@/lib/auth";
 import type { Metadata } from "next";
-import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cookies, headers } from "next/headers";
 import { AppRail } from "@/components/shell/rail";
 import { AppTopBar } from "@/components/shell/top-bar";
-import { auth } from "@/lib/auth";
+import { RailProvider } from "@/components/shell/rail-context";
+import { KeyboardShortcuts } from "@/components/shell/keyboard-shortcuts";
 
 export const metadata: Metadata = {
   title: {
@@ -58,14 +60,17 @@ export default async function AppLayout({
   const railCollapsed = cookieStore.get("rail_collapsed")?.value === "1";
 
   return (
-    <div className="flex min-h-screen">
-      <AppRail defaultCollapsed={railCollapsed} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AppTopBar />
-        <main className="flex-1 px-6 pt-8 pb-20 md:px-10 md:pt-10 md:pb-16">
-          <div className="mx-auto w-full max-w-[1280px]">{children}</div>
-        </main>
+    <RailProvider defaultCollapsed={railCollapsed}>
+      <KeyboardShortcuts />
+      <div className="flex min-h-screen">
+        <AppRail />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppTopBar />
+          <main className="flex-1 px-6 pt-8 pb-20 md:px-10 md:pt-10 md:pb-16">
+            <div className="mx-auto w-full max-w-[1280px]">{children}</div>
+          </main>
+        </div>
       </div>
-    </div>
+    </RailProvider>
   );
 }

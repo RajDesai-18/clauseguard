@@ -6,14 +6,15 @@ import logging
 
 import mammoth
 
+from app.services.text_cleaning import fix_mojibake
+
 logger = logging.getLogger(__name__)
 
 
 def parse_pdf(file_bytes: bytes) -> str:
     """Extract text from a PDF file.
 
-    Uses pdfplumber for local extraction. LlamaParse can be
-    swapped in later for structure-aware parsing.
+    Uses pdfplumber for local extraction.
 
     Args:
         file_bytes: Raw PDF bytes.
@@ -75,20 +76,26 @@ def parse_docx(file_bytes: bytes) -> str:
 def parse_document(file_bytes: bytes, file_name: str) -> str:
     """Parse a document based on its file extension.
 
+    Extracted text is passed through ``fix_mojibake`` so that upstream encoding
+    damage (UTF-8 mis-decoded as Windows-1252) is repaired before the text is
+    stored or analysed. Clean text is unaffected.
+
     Args:
         file_bytes: Raw file bytes.
         file_name: Original filename (used to detect type).
 
     Returns:
-        Extracted text content.
+        Extracted, mojibake-repaired text content.
 
     Raises:
         ValueError: If the file type is unsupported or no text was extracted.
     """
     lower_name = file_name.lower()
     if lower_name.endswith(".pdf"):
-        return parse_pdf(file_bytes)
+        text = parse_pdf(file_bytes)
     elif lower_name.endswith(".docx"):
-        return parse_docx(file_bytes)
+        text = parse_docx(file_bytes)
     else:
         raise ValueError(f"Unsupported file type: {file_name}")
+
+    return fix_mojibake(text)
