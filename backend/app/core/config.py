@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://clauseguard:secret@localhost:5432/clauseguard"
+    db_echo: bool = False
 
     # RabbitMQ
     rabbitmq_url: str = "amqp://clauseguard:secret@localhost:5672/"
