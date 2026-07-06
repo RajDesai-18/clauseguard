@@ -24,15 +24,50 @@ beforeEach(() => {
 });
 
 describe("PasswordCard", () => {
-  it("shows the deferral note for a Google-only account (no password)", () => {
+  it("shows the set-password form for a Google-only account (no password)", () => {
     render(<PasswordCard hasPassword={false} onChanged={() => {}} />);
 
-    // Honest note, not a form.
+    // Set-password affordance, not the change-password form.
     expect(screen.getByText(/signed in with google/i)).toBeInTheDocument();
-    expect(screen.getByText(/coming with account management/i)).toBeInTheDocument();
-    // No current-password field, no submit button.
+    expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^confirm password$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /set password/i })).toBeInTheDocument();
+    // The tell that distinguishes set-password from change-password:
+    // there is no current-password field, because there is nothing to verify.
     expect(screen.queryByLabelText(/current password/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("posts to the set-password route and refetches accounts on success", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChanged = vi.fn();
+    const user = userEvent.setup();
+    render(<PasswordCard hasPassword={false} onChanged={onChanged} />);
+
+    const submit = screen.getByRole("button", { name: /set password/i });
+    expect(submit).toBeDisabled();
+
+    // A matching 8+ char password satisfies validity.
+    await user.type(screen.getByLabelText(/^new password$/i), "newpassword1");
+    await user.type(screen.getByLabelText(/^confirm password$/i), "newpassword1");
+    expect(submit).toBeEnabled();
+
+    await user.click(submit);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/set-password",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ newPassword: "newpassword1" }),
+      })
+    );
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    vi.unstubAllGlobals();
   });
 
   it("shows the change-password form when a password already exists", () => {

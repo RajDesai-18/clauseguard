@@ -55,10 +55,28 @@ export const auth = betterAuth({
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
+    // Hard-delete a user and cascade their auth rows (sessions, accounts).
+    // No `sendDeleteAccountVerification` callback is configured, so deletion
+    // happens immediately in the `auth.api.deleteUser` call rather than via a
+    // two-step email flow. That is deliberate: SMTP is not wired yet, and the
+    // destructive intent is confirmed in the UI (typed "DELETE") instead. The
+    // Next.js orchestrator route purges app data (contracts, clauses, MinIO
+    // objects) via FastAPI *before* calling deleteUser, while the session is
+    // still valid.
+    deleteUser: {
+      enabled: true,
+    },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // refresh expiry every 24h of activity
+    // Disable the fresh-session gate on sensitive operations. Better Auth
+    // otherwise requires a session created within `freshAge` (default 1 day)
+    // for deleteUser / unlinkAccount, which would intermittently reject an
+    // OAuth user whose last sign-in was more than a day ago. We rely on
+    // per-operation guards instead: current-password for change-password, the
+    // lock-out guard for disconnect, and a typed confirmation for delete.
+    freshAge: 0,
     fields: {
       userId: "user_id",
       expiresAt: "expires_at",
