@@ -34,9 +34,55 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Zero trace/span ids: what OpenTelemetry uses to mean "no active span".
+_NO_TRACE_ID = f"{0:032x}"
+_NO_SPAN_ID = f"{0:016x}"
+
 # Guards against installing a second provider if setup is called more than
 # once in the same process (e.g. reload, repeated worker signals).
 _configured = False
+
+
+class _TraceContextFilter(logging.Filter):
+    """Guarantee every log record carries otelTraceID / otelSpanID.
+
+    A format string that references these attributes must be able to resolve
+    them on *every* record, including records emitted before instrumentation
+    runs or by loggers the OTel record factory doesn't cover. This filter sets
+    them unconditionally: the real ids when a span is active, all-zeros when
+    not. That makes log formatting robust rather than dependent on the
+    LoggingInstrumentor record factory having run first.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        span = trace.get_current_span()
+        ctx = span.get_span_context() if span else None
+        if ctx is not None and ctx.is_valid:
+            record.otelTraceID = f"{ctx.trace_id:032x}"
+            record.otelSpanID = f"{ctx.span_id:016x}"
+        else:
+            record.otelTraceID = _NO_TRACE_ID
+            record.otelSpanID = _NO_SPAN_ID
+        return True
+
+
+def install_log_trace_filter(target: logging.Logger | None = None) -> None:
+    """Attach the trace-context filter to a logger's handlers.
+
+    Idempotent: skips handlers that already have the filter. Call this after
+    logging is configured (handlers exist) so every emitted record gets the
+    otelTraceID / otelSpanID attributes the format string expects.
+
+    Args:
+        target: The logger whose handlers should get the filter. Defaults to
+            the root logger, which covers the API's basicConfig handler; the
+            Celery logging signals pass the specific logger they just
+            configured so the filter lands on Celery's own handlers too.
+    """
+    log = target if target is not None else logging.getLogger()
+    for handler in log.handlers:
+        if not any(isinstance(f, _TraceContextFilter) for f in handler.filters):
+            handler.addFilter(_TraceContextFilter())
 
 
 def _build_exporter() -> SpanExporter:
@@ -89,15 +135,32 @@ def setup_tracing(service_suffix: str) -> None:
     provider.add_span_processor(BatchSpanProcessor(_build_exporter()))
     trace.set_tracer_provider(provider)
 
-    # Instrument Celery in every process that touches the queue. The API is a
-    # producer (it dispatches the pipeline), and the worker is both consumer
-    # and producer (it re-dispatches the dynamic chords), so both call this.
-    # CeleryInstrumentor injects the active trace context into each task
-    # message on publish and extracts it on the worker, carrying one trace
-    # across the RabbitMQ boundary.
-    from opentelemetry.instrumentation.celery import CeleryInstrumentor
+    # Instrument the frameworks. This is wrapped so a missing or misbehaving
+    # instrumentation package degrades observability rather than taking down
+    # the process: tracing is best-effort and must never crash the app it
+    # observes. The core provider above is already installed, so spans still
+    # export even if an instrumentor here fails.
+    try:
+        # Celery: producer side in the API, consumer + producer in the worker.
+        # Injects/extracts trace context across the RabbitMQ boundary so the
+        # whole saga is one trace.
+        from opentelemetry.instrumentation.celery import CeleryInstrumentor
 
-    CeleryInstrumentor().instrument()
+        CeleryInstrumentor().instrument()
+
+        # Logging: adds otelTraceID / otelSpanID to records. We also install
+        # our own filter (via install_log_trace_filter) which guarantees the
+        # attributes exist even for records this instrumentor's factory doesn't
+        # reach.
+        from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
+        LoggingInstrumentor().instrument(set_logging_format=False)
+    except Exception:
+        logger.warning(
+            "OpenTelemetry framework instrumentation partially failed; "
+            "continuing with degraded observability",
+            exc_info=True,
+        )
 
     _configured = True
     logger.info("OpenTelemetry tracer provider installed for service=%s", service_name)

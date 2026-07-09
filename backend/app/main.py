@@ -12,14 +12,19 @@ from app.core.config import settings
 from app.core.database import dispose_engine
 from app.core.errors import register_exception_handlers
 from app.core.redis import close_redis
-from app.core.tracing import setup_tracing
+from app.core.tracing import install_log_trace_filter, setup_tracing
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format=("%(asctime)s | %(levelname)s | %(name)s | trace_id=%(otelTraceID)s | %(message)s"),
 )
+
+# Guarantee every record has otelTraceID before any line is formatted, so the
+# format string above can always resolve it (real id under a span, zeros
+# otherwise). Must run before the first log emission through this format.
+install_log_trace_filter()
 
 logger = logging.getLogger(__name__)
 
