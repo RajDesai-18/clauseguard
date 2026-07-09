@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     rate_limit_capacity: int = 60  # burst: max tokens in the bucket
     rate_limit_refill_per_second: float = 1.0  # sustained: tokens added per second
 
+    # OpenTelemetry tracing
+    otel_enabled: bool = True
+    otel_service_name: str = "clauseguard"
+    otel_exporter_otlp_endpoint: str = "http://jaeger:4317"
+
     # Analysis result cache (read-through, completed contracts only)
     analysis_cache_ttl_seconds: int = 3600
 

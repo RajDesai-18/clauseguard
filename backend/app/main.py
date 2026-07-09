@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import dispose_engine
 from app.core.errors import register_exception_handlers
 from app.core.redis import close_redis
+from app.core.tracing import setup_tracing
 from app.middleware.rate_limiter import RateLimitMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 
@@ -20,6 +22,12 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# Install the tracer provider for the API process before the app is built, so
+# FastAPI instrumentation below attaches to a configured provider. Also
+# instruments Celery so the pipeline dispatch from the upload endpoint carries
+# trace context into the queue.
+setup_tracing("api")
 
 
 @asynccontextmanager
@@ -74,6 +82,11 @@ def create_app() -> FastAPI:
     # Structured error envelope on every error response.
     # Registered after routes; handlers apply app-wide regardless of order.
     register_exception_handlers(app)
+
+    # Instrument FastAPI after routes and middleware are registered. This
+    # creates a server span per request; combined with the tracer provider
+    # installed at import time, request spans export to the configured backend.
+    FastAPIInstrumentor.instrument_app(app)
 
     return app
 
