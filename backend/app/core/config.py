@@ -1,5 +1,6 @@
 """Application configuration via environment variables."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -70,6 +71,30 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         """Check if running in development mode."""
         return self.app_env == "development"
+
+    @model_validator(mode="after")
+    def _guard_production_secrets(self) -> "Settings":
+        """Refuse to run in production with insecure default secrets.
+
+        In development the placeholder defaults are fine. In production they
+        are a security hole (the app would sign sessions with a value that is
+        public in the repo), so we fail fast at startup rather than boot
+        silently insecure. This turns a forgotten env var into an obvious
+        crash during deploy instead of a latent vulnerability.
+        """
+        if self.app_env == "production":
+            if self.app_secret_key == "change-me-in-production":
+                raise ValueError(
+                    "APP_SECRET_KEY is still the default value in production. "
+                    "Set a real secret via the APP_SECRET_KEY environment variable."
+                )
+            if len(self.app_secret_key) < 32:
+                raise ValueError(
+                    "APP_SECRET_KEY is too short for production "
+                    f"(got {len(self.app_secret_key)} chars, need at least 32). "
+                    "Generate a strong secret, e.g. `openssl rand -hex 32`."
+                )
+        return self
 
 
 settings = Settings()
