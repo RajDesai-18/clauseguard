@@ -70,6 +70,7 @@ def init_worker_tracing(**_kwargs: object) -> None:
 # Tasks are imported explicitly in app/tasks/__init__.py.
 # Autodiscovery is intentionally not used because it can silently
 # skip modules with import errors, masking real problems.
+import app.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
 
 
 @celery_app.task(name="app.tasks.ping")
