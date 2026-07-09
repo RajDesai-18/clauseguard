@@ -49,10 +49,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const parsed = BodySchema.safeParse(raw);
   if (!parsed.success) {
     const message = parsed.error.issues[0]?.message ?? "Invalid request.";
-    return NextResponse.json(
-      { error: { code: "invalid_request", message } },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: { code: "invalid_request", message } }, { status: 400 });
   }
 
   try {

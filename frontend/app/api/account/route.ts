@@ -32,7 +32,9 @@ export async function DELETE(req: Request): Promise<NextResponse> {
     const session = await auth.api.getSession({ headers: req.headers });
     if (!session) {
       return NextResponse.json(
-        { error: { code: "unauthorized", message: "You must be signed in to delete your account." } },
+        {
+          error: { code: "unauthorized", message: "You must be signed in to delete your account." },
+        },
         { status: 401 }
       );
     }
@@ -51,17 +53,15 @@ export async function DELETE(req: Request): Promise<NextResponse> {
       // Leave the auth user intact so nothing is half-deleted. The user's
       // data is unchanged (the purge aborts atomically on failure), so a
       // retry is safe.
-      const body = (await purgeRes.json().catch(() => null)) as
-        | { detail?: string; error?: { message?: string } }
-        | null;
+      const body = (await purgeRes.json().catch(() => null)) as {
+        detail?: string;
+        error?: { message?: string };
+      } | null;
       const message =
         body?.error?.message ??
         body?.detail ??
         "Couldn't remove your data. Your account was not deleted. Please try again.";
-      return NextResponse.json(
-        { error: { code: "purge_failed", message } },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: { code: "purge_failed", message } }, { status: 502 });
     }
 
     // Step 2: delete the auth user. With no sendDeleteAccountVerification

@@ -335,9 +335,9 @@ function SetPasswordForm({ onChanged }: { onChanged: () => void }) {
         body: JSON.stringify({ newPassword: next }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
-          | { error?: { message?: string } }
-          | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
         throw new Error(body?.error?.message ?? "Couldn't set your password.");
       }
       // Success: refetch accounts. The credential now exists, so the
@@ -668,9 +668,9 @@ function DeleteAccount() {
         credentials: "include",
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
-          | { error?: { message?: string } }
-          | null;
+        const body = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
         throw new Error(body?.error?.message ?? "Couldn't delete your account.");
       }
       // Account and session are gone. Send them to login; refresh clears any
