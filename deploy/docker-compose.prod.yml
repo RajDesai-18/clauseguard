@@ -1,0 +1,117 @@
+# Production Compose for the ClauseGuard single-box deployment (Option 2).
+#
+# Everything runs on one VPS:
+#   - Caddy is the only public entry point (80/443). It serves the Next.js
+#     frontend at clauseguard.dev and reverse-proxies the FastAPI backend at
+#     api.clauseguard.dev, terminating TLS for both.
+#   - Frontend (Next.js) and backend (FastAPI + Celery) run as containers.
+#   - Postgres, Redis, RabbitMQ, MinIO, Jaeger have NO published host ports;
+#     they are reachable only over the internal Docker network. Better Auth
+#     (in the frontend container) and FastAPI both reach Postgres internally,
+#     which is why no database is ever exposed to the internet.
+#
+# Layered on top of the base docker-compose.yml:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# Values like ${POSTGRES_PASSWORD} are interpolated by Compose from the .env
+# file in the repo root.
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: []
+
+  redis:
+    ports: []
+
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports: []
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports: []
+
+  jaeger:
+    # Internal only. To view the UI, SSH-tunnel:
+    #   ssh -L 16686:localhost:16686 raj@<vps-ip>
+    # then open http://localhost:16686 on your machine. (Requires temporarily
+    # publishing the port, or use `docker compose exec`-based access.)
+    ports: []
+
+  api:
+    volumes: []
+    ports: []
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    restart: unless-stopped
+
+  worker:
+    volumes: []
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    restart: unless-stopped
+
+  flower:
+    ports: []
+    environment:
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379/0
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client bundle at build time.
+        NEXT_PUBLIC_API_URL: https://api.clauseguard.dev
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://clauseguard.dev
+    restart: unless-stopped
+    environment:
+      # Server-side runtime secrets for Better Auth (read at runtime).
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      NEXT_PUBLIC_API_URL: https://api.clauseguard.dev
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://clauseguard.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No published ports; Caddy reaches it on the internal network at :3000.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:
