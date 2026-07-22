@@ -10,6 +10,14 @@
 #     (in the frontend container) and FastAPI both reach Postgres internally,
 #     which is why no database is ever exposed to the internet.
 #
+# NOTE ON `!reset []`:
+#   Compose treats `ports` and `volumes` as multi-value options and MERGES
+#   override lists with base lists rather than replacing them. A plain `[]`
+#   does NOT clear the base ports; every base port survives the merge. Docker
+#   publishes ports via its own iptables rules that BYPASS ufw, so an unreset
+#   port would be exposed to the public internet even though `ufw status`
+#   looks clean. `!reset []` (Compose 2.24+) explicitly clears the key.
+#
 # Layered on top of the base docker-compose.yml:
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
 #
@@ -22,33 +30,33 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports: []
+    ports: !reset []
 
   redis:
-    ports: []
+    ports: !reset []
 
   rabbitmq:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports: []
+    ports: !reset []
 
   minio:
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    ports: []
+    ports: !reset []
 
   jaeger:
     # Internal only. To view the UI, SSH-tunnel:
     #   ssh -L 16686:localhost:16686 raj@<vps-ip>
     # then open http://localhost:16686 on your machine. (Requires temporarily
     # publishing the port, or use `docker compose exec`-based access.)
-    ports: []
+    ports: !reset []
 
   api:
-    volumes: []
-    ports: []
+    volumes: !reset []
+    ports: !reset []
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
@@ -58,7 +66,7 @@ services:
     restart: unless-stopped
 
   worker:
-    volumes: []
+    volumes: !reset []
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
@@ -68,7 +76,7 @@ services:
     restart: unless-stopped
 
   flower:
-    ports: []
+    ports: !reset []
     environment:
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
       REDIS_URL: redis://redis:6379/0
@@ -82,6 +90,7 @@ services:
         # Baked into the client bundle at build time.
         NEXT_PUBLIC_API_URL: https://api.clauseguard.dev
         NEXT_PUBLIC_BETTER_AUTH_URL: https://clauseguard.dev
+    ports: !reset []
     restart: unless-stopped
     environment:
       # Server-side runtime secrets for Better Auth (read at runtime).
