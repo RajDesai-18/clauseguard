@@ -14,10 +14,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, delete, func, select
 
 from app.api.deps import CurrentUser, DBSession
+from app.core.config import settings
 from app.core.storage import delete_file, upload_file
 from app.models.clause import Clause
-from app.core.config import settings
-from app.services.progress import CHANNEL_PREFIX
 from app.models.contract import Contract
 from app.schemas.clause import ClauseListResponse, ClauseResponse
 from app.schemas.contract import (
@@ -26,6 +25,7 @@ from app.schemas.contract import (
     ContractSummary,
     ContractUploadResponse,
 )
+from app.services.progress import CHANNEL_PREFIX
 from app.services.result_cache import (
     get_cached_clauses,
     invalidate_contract_cache,
@@ -232,6 +232,7 @@ async def list_contracts(
         size=size,
     )
 
+
 @router.get("/{contract_id}/stream")
 async def stream_contract_progress(
     contract_id: uuid.UUID,
@@ -307,9 +308,7 @@ async def stream_contract_progress(
 
             # Forward events as they are published, with idle heartbeats.
             while True:
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=15.0
-                )
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
                 if message is None:
                     # Idle period: heartbeat comment keeps the connection open.
                     yield ": keepalive\n\n"
@@ -342,6 +341,7 @@ async def stream_contract_progress(
             "X-Accel-Buffering": "no",
         },
     )
+
 
 @router.get("/{contract_id}", response_model=ContractDetail)
 async def get_contract(
