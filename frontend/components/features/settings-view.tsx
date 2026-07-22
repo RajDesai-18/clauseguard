@@ -205,21 +205,12 @@ export function PasswordCard({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  // Google-only accounts have no password to change, and set-password
-  // isn't exposed as an auth route in this config. Setting a first
-  // password is a sensitive account operation we'll wire through the
-  // backend account endpoints (alongside delete-account) rather than
-  // fake it client-side.
+  // Google-only accounts have no password yet. Offer to set a first
+  // password via the server route, which links a credential account.
+  // Once set, listAccounts refetches and this card switches to the
+  // change-password form below.
   if (!hasPassword) {
-    return (
-      <div className="space-y-2">
-        <p className="text-body-sm text-foreground font-medium">Password</p>
-        <p className="text-body-sm text-muted-foreground leading-relaxed">
-          You signed in with Google, so this account has no password yet. Setting a password to
-          enable email sign-in is coming with account management.
-        </p>
-      </div>
-    );
+    return <SetPasswordForm onChanged={onChanged} />;
   }
 
   const valid = next.length >= PASSWORD_MIN_LENGTH && next === confirm && current.length > 0;
@@ -315,6 +306,104 @@ export function PasswordCard({
           className="border-foreground bg-foreground text-background hover:bg-foreground/90 font-display rounded-sm border px-4 py-2 text-[13px] font-medium transition-colors duration-150 active:scale-[0.99] disabled:opacity-40"
         >
           {busy ? "Saving…" : "Update password"}
+        </button>
+        {done && !error && <span className="text-muted-foreground text-body-sm">Saved.</span>}
+      </div>
+      {error && <p className="text-destructive text-body-sm">{error}</p>}
+    </div>
+  );
+}
+
+function SetPasswordForm({ onChanged }: { onChanged: () => void }) {
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const valid = next.length >= PASSWORD_MIN_LENGTH && next === confirm;
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      const res = await fetch("/api/account/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: next }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(body?.error?.message ?? "Couldn't set your password.");
+      }
+      // Success: refetch accounts. The credential now exists, so the
+      // parent flips this card to the change-password form.
+      setDone(true);
+      setNext("");
+      setConfirm("");
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't set your password.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-body-sm text-foreground font-medium">Set a password</p>
+        <p className="text-body-sm text-muted-foreground mt-0.5 leading-relaxed">
+          You signed in with Google. Add a password to also sign in with your email.
+        </p>
+      </div>
+
+      <Field
+        id="set-new-password"
+        label="New password"
+        type="password"
+        autoComplete="new-password"
+        value={next}
+        onChange={(v) => {
+          setNext(v);
+          setDone(false);
+          setError(null);
+        }}
+      />
+      <Field
+        id="set-confirm-password"
+        label="Confirm password"
+        type="password"
+        autoComplete="new-password"
+        value={confirm}
+        onChange={(v) => {
+          setConfirm(v);
+          setDone(false);
+          setError(null);
+        }}
+      />
+
+      {next.length > 0 && next.length < PASSWORD_MIN_LENGTH && (
+        <p className="text-muted-foreground text-body-sm">
+          Use at least {PASSWORD_MIN_LENGTH} characters.
+        </p>
+      )}
+      {confirm.length > 0 && next !== confirm && (
+        <p className="text-muted-foreground text-body-sm">Passwords don&rsquo;t match.</p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!valid || busy}
+          className="border-foreground bg-foreground text-background hover:bg-foreground/90 font-display rounded-sm border px-4 py-2 text-[13px] font-medium transition-colors duration-150 active:scale-[0.99] disabled:opacity-40"
+        >
+          {busy ? "Saving…" : "Set password"}
         </button>
         {done && !error && <span className="text-muted-foreground text-body-sm">Saved.</span>}
       </div>
@@ -549,26 +638,115 @@ function DangerZoneSection() {
         </button>
       </div>
 
-      <div className="border-destructive/30 border-t pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-body-sm text-foreground font-medium">Delete account</p>
-            <p className="text-body-sm text-muted-foreground mt-0.5 leading-relaxed">
-              Permanently removes your account and every contract, clause, and file. Coming with
-              account management.
-            </p>
-          </div>
+      <DeleteAccount />
+    </SettingsSection>
+  );
+}
+
+function DeleteAccount() {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canDelete = confirmText === "DELETE";
+
+  const reset = () => {
+    setConfirming(false);
+    setConfirmText("");
+    setError(null);
+  };
+
+  const submit = async () => {
+    if (!canDelete) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account", {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: { message?: string };
+        } | null;
+        throw new Error(body?.error?.message ?? "Couldn't delete your account.");
+      }
+      // Account and session are gone. Send them to login; refresh clears any
+      // cached server-rendered state tied to the now-deleted session.
+      router.push("/login");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't delete your account.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-destructive/30 border-t pt-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-body-sm text-foreground font-medium">Delete account</p>
+          <p className="text-body-sm text-muted-foreground mt-0.5 leading-relaxed">
+            Permanently removes your account and every contract, clause, and file. This cannot be
+            undone.
+          </p>
+        </div>
+        {!confirming && (
           <button
             type="button"
-            disabled
-            title="Coming with account management"
-            className="border-destructive/40 text-destructive/60 shrink-0 cursor-not-allowed rounded-sm border px-4 py-2 font-mono text-[11px] tracking-[0.08em] uppercase opacity-60"
+            onClick={() => setConfirming(true)}
+            className="border-destructive/40 text-destructive hover:bg-destructive/8 shrink-0 rounded-sm border px-4 py-2 font-mono text-[11px] tracking-[0.08em] uppercase transition-colors duration-150"
           >
             Delete
           </button>
-        </div>
+        )}
       </div>
-    </SettingsSection>
+
+      {confirming && (
+        <div className="border-destructive/30 bg-destructive/4 mt-4 space-y-3 rounded-sm border p-4">
+          <label
+            htmlFor="delete-confirm"
+            className="text-body-sm text-foreground block leading-relaxed"
+          >
+            Type <span className="text-destructive font-mono font-medium">DELETE</span> to confirm.
+            This permanently removes your account and all data.
+          </label>
+          <input
+            id="delete-confirm"
+            type="text"
+            value={confirmText}
+            autoComplete="off"
+            autoFocus
+            onChange={(e) => {
+              setConfirmText(e.target.value);
+              setError(null);
+            }}
+            className="border-border bg-card text-foreground focus-visible:border-destructive focus-visible:ring-destructive/30 w-full rounded-sm border px-3 py-2 text-[14px] transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-none"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canDelete || busy}
+              className="border-destructive bg-destructive text-background hover:bg-destructive/90 font-display rounded-sm border px-4 py-2 text-[13px] font-medium transition-colors duration-150 active:scale-[0.99] disabled:opacity-40"
+            >
+              {busy ? "Deleting…" : "Delete my account"}
+            </button>
+            <button
+              type="button"
+              onClick={reset}
+              disabled={busy}
+              className="text-muted-foreground hover:text-foreground font-mono text-[11px] tracking-[0.08em] uppercase transition-colors duration-150 disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="text-destructive text-body-sm">{error}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -31,6 +31,9 @@ async def get_optional_user(
     better_auth_session_token: Annotated[
         str | None, Cookie(alias="better-auth.session_token")
     ] = None,
+    secure_better_auth_session_token: Annotated[
+        str | None, Cookie(alias="__Secure-better-auth.session_token")
+    ] = None,
 ) -> User | None:
     """Resolve the current user from the Better Auth session cookie.
 
@@ -38,15 +41,22 @@ async def get_optional_user(
     that work for both authenticated and anonymous callers. For endpoints
     that require a user, use `get_current_user` instead.
 
+    Better Auth names the session cookie differently depending on transport:
+    over plain HTTP (local dev) it is `better-auth.session_token`, but over
+    HTTPS in production it adds the `__Secure-` prefix
+    (`__Secure-better-auth.session_token`). We accept either so the same code
+    authenticates in both environments.
+
     The cookie value Better Auth sets is `<token>.<signature>`. We split
     on `.` and use the token portion to look up the session row.
     """
-    if better_auth_session_token is None:
+    session_token = secure_better_auth_session_token or better_auth_session_token
+    if session_token is None:
         return None
 
     # Better Auth signs the cookie value: format is "<token>.<signature>".
     # We only need the token to look up the session row.
-    raw_token = better_auth_session_token.split(".", 1)[0]
+    raw_token = session_token.split(".", 1)[0]
     if not raw_token:
         return None
 

@@ -1,0 +1,53 @@
+# Caddy reverse proxy for the ClauseGuard single-box deployment.
+#
+# Caddy automatically provisions and renews Let's Encrypt TLS certificates for
+# every domain below, provided:
+#   1. each domain's DNS points at this VPS's IP, and
+#   2. ports 80 and 443 are reachable (ufw allows them).
+#
+# Routes:
+#   clauseguard.dev       -> Next.js frontend container (:3000)
+#   www.clauseguard.dev   -> redirect to the apex
+#   api.clauseguard.dev   -> FastAPI backend container (:8000)
+
+{
+	email admin@clauseguard.dev
+}
+
+# Frontend (apex).
+clauseguard.dev {
+	reverse_proxy frontend:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# Redirect www to the apex (301).
+www.clauseguard.dev {
+	redir https://clauseguard.dev{uri} permanent
+}
+
+# Backend API.
+api.clauseguard.dev {
+	# SSE progress stream: disable response buffering so events flush to the
+	# browser immediately and the long-lived connection isn't held/closed by
+	# Caddy's default buffering.
+	@sse path_regexp sse ^/api/v1/contracts/[^/]+/stream$
+	reverse_proxy @sse api:8000 {
+		flush_interval -1
+	}
+
+	reverse_proxy api:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

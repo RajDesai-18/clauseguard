@@ -56,6 +56,19 @@ services:
       timeout: 5s
       retries: 5
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC ingest
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ./backend
@@ -69,6 +82,7 @@ services:
       RABBITMQ_URL: amqp://clauseguard:secret@rabbitmq:5672/
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic
@@ -100,6 +114,7 @@ services:
       RABBITMQ_URL: amqp://clauseguard:secret@rabbitmq:5672/
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic

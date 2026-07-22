@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 import uuid
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, delete, func, select
 
 from app.api.deps import CurrentUser, DBSession
+from app.core.config import settings
 from app.core.storage import delete_file, upload_file
 from app.models.clause import Clause
 from app.models.contract import Contract
@@ -22,6 +25,7 @@ from app.schemas.contract import (
     ContractSummary,
     ContractUploadResponse,
 )
+from app.services.progress import CHANNEL_PREFIX
 from app.services.result_cache import (
     get_cached_clauses,
     invalidate_contract_cache,
@@ -226,6 +230,116 @@ async def list_contracts(
         total=total,
         page=page,
         size=size,
+    )
+
+
+@router.get("/{contract_id}/stream")
+async def stream_contract_progress(
+    contract_id: uuid.UUID,
+    db: DBSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Stream live pipeline progress for a contract via Server-Sent Events.
+
+    Subscribes to the Redis channel the pipeline publishes progress to and
+    forwards each event to the browser as an SSE frame. Authenticated and
+    ownership-checked like every other endpoint in this router; returns 404
+    if the contract doesn't exist or belongs to another user.
+
+    Implementation notes:
+
+    - A FRESH async Redis client is created inside the generator and closed in
+      `finally`. The shared `get_redis()` singleton binds its connection pool
+      to the first event loop it sees, which misbehaves for a long-lived
+      subscription under ASGI, so it must not be used here.
+    - On connect we check the contract's current status. If it is already
+      terminal (`complete`/`failed`), we emit that once and close, handling the
+      race where the pipeline finishes before the browser opens the stream.
+    - An idle heartbeat comment keeps the connection alive through proxy idle
+      timeouts (Caddy in production).
+    - The generator's `finally` unsubscribes and closes the client so a browser
+      disconnect doesn't leak a Redis connection.
+    """
+    result = await db.execute(
+        select(Contract).where(
+            and_(
+                Contract.id == contract_id,
+                Contract.user_id == current_user.id,
+            )
+        )
+    )
+    contract = result.scalar_one_or_none()
+    if contract is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found.",
+        )
+
+    initial_status = contract.status
+    channel = f"{CHANNEL_PREFIX}{contract_id}"
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        import redis.asyncio as aioredis
+
+        # Fresh client bound to THIS request's event loop (see docstring).
+        client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        pubsub = client.pubsub()
+        try:
+            await pubsub.subscribe(channel)
+
+            # Tell the client the stream is open.
+            yield "event: connected\ndata: {}\n\n"
+
+            # Already-complete race: if the contract is already terminal, emit
+            # a final event and close rather than waiting for events that will
+            # never come.
+            if initial_status in ("complete", "failed"):
+                payload = json.dumps(
+                    {
+                        "contract_id": str(contract_id),
+                        "status": initial_status,
+                        "detail": "Analysis already complete.",
+                        "current_step": 5,
+                        "total_steps": 5,
+                    }
+                )
+                yield f"data: {payload}\n\n"
+                return
+
+            # Forward events as they are published, with idle heartbeats.
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                if message is None:
+                    # Idle period: heartbeat comment keeps the connection open.
+                    yield ": keepalive\n\n"
+                    continue
+
+                data = message["data"]
+                yield f"data: {data}\n\n"
+
+                # Stop once the pipeline reaches a terminal state.
+                try:
+                    parsed = json.loads(data)
+                    if parsed.get("status") in ("complete", "failed", "error"):
+                        break
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        finally:
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.aclose()
+            finally:
+                await client.aclose()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Disable proxy buffering (nginx-style hint; harmless elsewhere).
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

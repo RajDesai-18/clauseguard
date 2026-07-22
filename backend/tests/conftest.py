@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import UTC, datetime
-from uuid import uuid4
+import os
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
+# Disable OpenTelemetry before any app module is imported. Importing app.main
+# runs setup_tracing() at module load, which would otherwise stand up an OTLP
+# exporter pointed at the Docker-only `jaeger` hostname. That host is
+# unresolvable from the local test environment, so the exporter's background
+# thread loops on connection errors and spews tracebacks (including
+# shutdown-time "I/O operation on closed file"). Tests have no need to export
+# telemetry; turning tracing off keeps the run clean and side-effect free.
+# Must be set before the app imports below, since Settings reads the env once
+# on first import.
+os.environ.setdefault("OTEL_ENABLED", "false")
 
-from app.api.deps import get_current_user
-from app.main import app
-from app.models.user import User
+import logging  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
+from uuid import uuid4  # noqa: E402
+
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+
+from app.api.deps import get_current_user  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.user import User  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
