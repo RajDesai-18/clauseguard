@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Public backend origin for the browser-side EventSource. Client-side code
+// must use the public URL (the browser cannot reach the internal Docker host),
+// and the path must include the /v1 prefix to match the backend route.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 export type StreamStatus =
   | "connecting"
   | "queued"
@@ -47,8 +52,8 @@ export function useContractStream(contractId: string | null): StreamState {
   useEffect(() => {
     if (!contractId) return;
 
-    const url = `/api/contracts/${contractId}/stream`;
-    const eventSource = new EventSource(url);
+    const url = `${API_URL}/api/v1/contracts/${contractId}/stream`;
+    const eventSource = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener("connected", () => {
