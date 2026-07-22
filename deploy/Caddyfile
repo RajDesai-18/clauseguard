@@ -33,6 +33,14 @@ www.clauseguard.dev {
 
 # Backend API.
 api.clauseguard.dev {
+	# SSE progress stream: disable response buffering so events flush to the
+	# browser immediately and the long-lived connection isn't held/closed by
+	# Caddy's default buffering.
+	@sse path_regexp sse ^/api/v1/contracts/[^/]+/stream$
+	reverse_proxy @sse api:8000 {
+		flush_interval -1
+	}
+
 	reverse_proxy api:8000
 
 	header {
