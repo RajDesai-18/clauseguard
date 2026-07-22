@@ -1,5 +1,5 @@
 # ClauseGuard Design System
-_v1.3 — April 2026_
+_v1.4 — July 2026_
 
 The single source of truth for visual, typographic, and interactive decisions.
 When building a new page or component, consult this document first. Deviations
@@ -675,6 +675,13 @@ For new sections or pages:
 ---
 
 ## Changelog
+
+**v1.4 (July 2026)**
+- No token or pattern changes. Marks the design system as shipped to production
+  at clauseguard.dev: all three chrome registers (marketing, app, auth) are live
+  and verified end to end on the deployed site across the five breakpoints.
+- Confirmed risk-color scoping holds in production analysis views (dashboard
+  pills, clause highlights) with no leakage into structural or settings UI.
 
 **v1.3 (April 2026)**
 - Added "Auth chrome (public transactional surfaces)" section
