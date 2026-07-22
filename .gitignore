@@ -40,12 +40,8 @@ htmlcov/
 minio_data/
 
 # PostgreSQL data
-pgdata/test-nda.pdf 
-pgdata/test-nda-2.pdf
-pgdata/test-contract.pdf
+pgdata/
 
-#Files
-test-nda.pdf
-test-nda-2.pdf
-test-contract.pdf
-.docx
+# Test contract files (never commit real/sample contracts)
+*.pdf
+*.docx
