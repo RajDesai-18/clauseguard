@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
-import { BondPaper } from "@/components/bond-paper";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://clauseguard.dev"),
   title: {
     default: "ClauseGuard — AI Contract Review for Everyone Else",
     template: "%s · ClauseGuard",
@@ -24,6 +24,11 @@ export const metadata: Metadata = {
     title: "ClauseGuard — AI Contract Review",
     description: "Instant, plain-English contract analysis with AI-suggested redlines.",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ClauseGuard - AI Contract Review",
+    description: "Instant, plain-English contract analysis with AI-suggested redlines.",
   },
   robots: {
     index: true,
@@ -54,9 +59,6 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="pointer-events-none fixed inset-0 z-0">
-            <BondPaper />
-          </div>
           <div className="relative z-10">{children}</div>
         </ThemeProvider>
       </body>

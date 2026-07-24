@@ -14,7 +14,7 @@ import { Logo } from "@/components/ui/logo";
  *
  * - Mobile: hamburger reveals full-screen drawer
  * - Tablet+: inline nav
- * - Scroll: background frosts + bottom border strengthens
+ * - Scroll: background frosts (border is constant)
  */
 export function SiteNav() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,8 +41,8 @@ export function SiteNav() {
   return (
     <>
       <header
-        className={`sticky top-0 z-40 border-b transition-[background-color,backdrop-filter,border-color] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-          scrolled ? "border-foreground/30 bg-background/30 backdrop-blur-md" : "border-border/40"
+        className={`border-border sticky top-0 z-40 border-b transition-[background-color,backdrop-filter] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+          scrolled ? "bg-background/30 backdrop-blur-md" : ""
         }`}
       >
         <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4 pl-14 md:px-10 md:pl-24 xl:pl-28">
